@@ -1,24 +1,48 @@
-import socket, threading
+import socket
 from threading import Thread, Lock
 
-global maxMessagesDict
+global message_codes
+message_codes = {
+    "ID" : 0,
+    "MESSAGE" : 1,
+    "COMMAND" : 2,
+    "PING" : 3,
+    "QUERY" : 4,
+    "BAD" : 67,
+    "GOOD" : 69,
+    "DISCONNECT" : 9,
+    0 : "ID",
+    1 : "MESSAGE",
+    2 : "COMMAND",
+    3 : "PING",
+    4 : "QUERY",
+    67: "BAD",
+    69: "GOOD",
+    9 : "DISCONNECT"
+}
+global user_dict
+user_dict = {}
+#mesage format: (code, username, payload)
 
 def commands(data, cid):
-    if (x:=data.decode().split(" "))[0] == "/setmaxmessages":
-        try:
-            new_max = int(x[1])
-            lock.acquire()
-            maxMessagesDict[cid] = new_max
-            lock.release()
-            msg = f"Max messages for client {cid} set to {new_max}"
-            print(msg)
-            return msg
-        except:
-            msg = "Invalid command format. Use /setmaxmessages <number>"
-            print(msg)
-            return msg
-    else:return "Invalid command"
+    return "Invalid command"
 
+def form_message(code, username, payload):
+    return bytes(f"{message_codes[code]}⠀{username}⠀{payload}", "utf-8")
+
+
+def unpack_message(data:bytes):
+    decoded = data.decode()
+    parts = decoded.split("⠀")
+    print(parts)
+    print(decoded)
+
+    code = message_codes[int(parts[0])]
+    print("CODE", code)
+    username = parts[1]
+    payload = parts[2]
+    return code, username, payload
+    return None, None, None
 
 
 def tcp_server_thread(tcp_socket, lock):
@@ -41,12 +65,6 @@ def udp_server_thread(udp_socket, lock):
         # receive data from client (data, addr)
         data, addr = udp_socket.recvfrom(5000)
         if data.decode().split(":")[0] == "ID" and len(data.decode().split(":")) == 2 and (cid:=(data.decode().split(":")[1])).isnumeric():
-            print("DICT", maxMessagesDict)
-            print('Client ID is {}'.format(data.decode().split(":")[1]))
-            if not(cid in maxMessagesDict.keys()):
-                lock.acquire()
-                maxMessagesDict[cid] = 5
-                lock.release()
             ids[addr] = cid
             udp_socket.sendto(data, addr)
         else:
@@ -57,15 +75,7 @@ def udp_server_thread(udp_socket, lock):
                 if data.decode()[0] == "/":
                     udp_socket.sendto(commands(data, cid).encode(), addr)
                     continue
-                if maxMessagesDict[cid] <= 0:
-                    msg = f"Max messages reached, ignoring message from client {cid}"
-                    print(msg)
-                    udp_socket.sendto(msg.encode(), addr)
-                    continue
                 if data:
-                    lock.acquire()
-                    maxMessagesDict[cid] -= 1
-                    lock.release()
                     print('sending data back to the client')
                     udp_socket.sendto(data, addr)
                 else:
@@ -80,41 +90,35 @@ def tcp_client_thread(clientsocket, address, lock):
     try:
         print('connection from', address)
         # Receive the data in small chunks and retransmit it
-        data = clientsocket.recv(5)
-        if data.decode().split(":")[0] == "ID" and len(data.decode().split(":")) == 2 and (cid:=(data.decode().split(":")[1])).isnumeric():
-            print("DICT", maxMessagesDict)
-            print('Client ID is {}'.format(data.decode().split(":")[1]))
-            if not(cid in maxMessagesDict.keys()):
-                lock.acquire()
-                maxMessagesDict[cid] = 5
-                lock.release()
-            clientsocket.sendall(data)
+        data = clientsocket.recv(9000)
+        code, id, message = unpack_message(data)
+        print("CODE:", code)
+        print("ID:", id)
+        if code == "ID" and id is not None:
+            print('Client ID is {}'.format(id))
+            cid = id
+            user_dict[address] = cid
+            response = form_message("GOOD", "SERVER", "ID accepted")
+            clientsocket.sendall(response)
 
             while True:
-                data = clientsocket.recv(5000)
-                print("DINGUS",maxMessagesDict[cid])
-                if data.decode()[0] == "/":
+                data = clientsocket.recv(9000) #what if its over 9000?
+                code, id, message = unpack_message(data)
+                if code == "COMMAND":
                     clientsocket.sendall(commands(data, cid).encode())
                     continue
-        
-                if maxMessagesDict[cid] <= 0:
-                    msg = f"Max messages reached for client {cid}, closing connection"
-                    print(msg)
-                    clientsocket.sendall(msg.encode())
-                    break
                 
-                print('received {!r}'.format(data.decode()))
+                print("Received " + message + " from " + cid)
                 if data:
-                    lock.acquire()
-                    maxMessagesDict[cid] -= 1
-                    lock.release()
                     print('sending data back to the client')
-                    clientsocket.sendall(data)
+                    response = form_message("GOOD", "SERVER", message)
+                    clientsocket.sendall(response)
                 else:
-                    print('no data from', address)
+                    print('no data from', cid)
                     break
         else:
             print("No ID received, closing connection")
+            clientsocket.sendall(form_message("BAD", "SERVER", "No ID received"))
             clientsocket.close()
             return
 
@@ -136,7 +140,6 @@ lock = Lock()
 tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 tcp_socket.bind((socket.gethostname(), 42000))
 tcp_socket.listen(5)
-maxMessagesDict = {}
 thread_tcp = Thread(target=tcp_server_thread, args=(tcp_socket,lock))
 
 #create UDP socket
