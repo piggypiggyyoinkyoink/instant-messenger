@@ -22,28 +22,28 @@ message_codes = {
 }
 global user_dict
 user_dict = {}
-#mesage format: (code, username, payload)
+global SERVER
+SERVER = "$S_SERVER"
+#mesage format: code⠀source_username⠀dest_user⠀payload
 
 def commands(data, cid):
     return "Invalid command"
 
-def form_message(code, username, payload):
-    return bytes(f"{message_codes[code]}⠀{username}⠀{payload}", "utf-8")
-
+def form_message(code, source_user, dest_user, payload):
+    return bytes(f"{message_codes[code]}⠀{source_user}⠀{dest_user}⠀{payload}", "utf-8")
 
 def unpack_message(data:bytes):
     decoded = data.decode()
-    parts = decoded.split("⠀")
-    print(parts)
     print(decoded)
-
-    code = message_codes[int(parts[0])]
-    print("CODE", code)
-    username = parts[1]
-    payload = parts[2]
-    return code, username, payload
-    return None, None, None
-
+    parts = decoded.split("⠀")
+    code = int(parts[0])
+    source_user = parts[1]
+    dest_user = parts[2]
+    payload = parts[3]
+    return code, source_user, dest_user, payload
+    try:pass
+    except:
+        return None, None, None, None
 
 def tcp_server_thread(tcp_socket, lock):
     while True:
@@ -91,34 +91,34 @@ def tcp_client_thread(clientsocket, address, lock):
         print('connection from', address)
         # Receive the data in small chunks and retransmit it
         data = clientsocket.recv(9000)
-        code, id, message = unpack_message(data)
+        code, source_user, dest_user, message = unpack_message(data)
         print("CODE:", code)
-        print("ID:", id)
-        if code == "ID" and id is not None:
-            print('Client ID is {}'.format(id))
-            cid = id
+        print("ID:", source_user)
+        if code == message_codes["ID"] and source_user is not None:
+            print('Client ID is {}'.format(source_user))
+            cid = source_user
             user_dict[address] = cid
-            response = form_message("GOOD", "SERVER", "ID accepted")
+            response = form_message("GOOD", SERVER, cid, "ID accepted")
             clientsocket.sendall(response)
 
             while True:
                 data = clientsocket.recv(9000) #what if its over 9000?
-                code, id, message = unpack_message(data)
+                code, source_user, dest_user, message = unpack_message(data)
                 if code == "COMMAND":
-                    clientsocket.sendall(commands(data, cid).encode())
+                    #clientsocket.sendall(commands(data, cid).encode())
                     continue
                 
                 print("Received " + message + " from " + cid)
                 if data:
                     print('sending data back to the client')
-                    response = form_message("GOOD", "SERVER", message)
+                    response = form_message("GOOD", SERVER, cid, message)
                     clientsocket.sendall(response)
                 else:
                     print('no data from', cid)
                     break
         else:
             print("No ID received, closing connection")
-            clientsocket.sendall(form_message("BAD", "SERVER", "No ID received"))
+            clientsocket.sendall(form_message("BAD", SERVER, source_user, "No ID received"))
             clientsocket.close()
             return
 

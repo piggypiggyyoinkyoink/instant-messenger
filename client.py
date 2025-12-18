@@ -1,5 +1,6 @@
-import socket
-from threading import Thread
+import socket, time
+from threading import Thread, Lock, Semaphore
+
 global message_codes
 message_codes = {
     "ID" : 0,
@@ -19,41 +20,57 @@ message_codes = {
     69: "GOOD",
     9 : "DISCONNECT"
 }
-#mesage format: code⠀username⠀payload
+global SERVER
+SERVER = "$S_SERVER"
+global WAITING
+WAITING = 0
+global GOOD
+GOOD = 1
+global BAD
+BAD = 2
+global status
+status = WAITING
+#mesage format: code⠀source_username⠀dest_user⠀payload
+lock = Lock()
 
-def form_message(code, username, payload):
-    return bytes(f"{message_codes[code]}⠀{username}⠀{payload}", "utf-8")
+
+def form_message(code, source_user, dest_user, payload):
+    return bytes(f"{message_codes[code]}⠀{source_user}⠀{dest_user}⠀{payload}", "utf-8")
 
 def unpack_message(data:bytes):
     try:
         decoded = data.decode()
         parts = decoded.split("⠀")
         code = int(parts[0])
-        username = parts[1]
-        payload = parts[2]
-        return code, username, payload
+        source_user = parts[1]
+        dest_user = parts[2]
+        payload = parts[3]
+        return code, source_user, dest_user, payload
     except:
-        return None, None, None
-
+        return None, None, None, None
 
 def send_tcp(tcp_sock, message):
     if type(message) is not bytes:
         raise Exception()
     # Send data
+    lock.acquire()
+    global status
+    status = WAITING
     print('sending {!r}'.format(message.decode("utf-8")))
     tcp_sock.sendall(message)
-
-    # Look for the response
-    amount_received = 0
-    amount_expected = len(message)
-
-    while amount_received < amount_expected:
-        data = tcp_sock.recv(5000)
-        if not data:
+    t1 = time.time()
+    while status == WAITING:
+        time.sleep(0.1)
+        if time.time() - t1 > 5:
+            print("Timeout waiting for response")
             break
-        amount_received += len(data)
-        print('received {!r}'.format(data.decode("utf-8")))
-    return
+    lock.release()
+    if status == GOOD:
+        print("Message sent successfully")
+        return 1
+    else:
+        print("Message failed to send")
+        return None
 
 
 
@@ -71,12 +88,22 @@ def send_udp(udp_sock:socket.socket, server_address, message):
     finally:
         return
 
+
+
+
+
 def client_receive_thread(tcp_sock):
+    global status
     while True:
         data = tcp_sock.recv(5000)
         if data:
-            code, id, message = unpack_message(data)
-            print(f"Received {message} from {id}")
+            code, source_user, dest_user, message = unpack_message(data)
+            print(f"Received {message} from {source_user}")
+            if source_user == SERVER:
+                if code == message_codes["GOOD"]:
+                    status = GOOD
+                elif code == message_codes["BAD"]:
+                    status = BAD
         else:
             print("Connection closed by server")
             tcp_sock.close()
@@ -96,18 +123,22 @@ def each_client_thread(id, tcp_server_address, udp_server_address):
                 tcp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 print('connecting to {} port {}'.format(*tcp_server_address))
                 tcp_sock.connect(tcp_server_address)
-                # currently broken (using same socket is bad?)
-                # rec_thread = Thread(target=client_receive_thread, args=(tcp_sock,))
-                # rec_thread.start()
+                rec_thread = Thread(target=client_receive_thread, args=(tcp_sock,))
+                rec_thread.start()
                 try:
                     #send id
-                    send_tcp(tcp_sock, form_message("ID", str(id), str(id)))
+                    for i in range(3):
+                        res = send_tcp(tcp_sock, form_message("ID", str(id), SERVER, str(id)))
+                        if res is not None:
+                            break
+                    if res is None:
+                        raise Exception("Failed to setup connection")
                 except: 
                     print("Failed to setup connection")
                     tcp_sock.close()
                     return
             try:
-                send_tcp(tcp_sock, form_message("MESSAGE", str(id), message))
+                send_tcp(tcp_sock, form_message("MESSAGE", str(id), SERVER, message))
             except:
                 print("Connection lost")
                 tcp_sock.close()
