@@ -20,14 +20,11 @@ message_codes = {
     69: "GOOD",
     9 : "DISCONNECT"
 }
-global SERVER
-SERVER = "$S_SERVER"
-global WAITING
-WAITING = 0
-global GOOD
-GOOD = 1
-global BAD
-BAD = 2
+global SERVER; SERVER = "$S_SERVER"
+global WAITING; WAITING = 0
+global GOOD; GOOD = 1
+global BAD; BAD = 2
+
 global status
 status = WAITING
 #mesage format: code⠀source_username⠀dest_user⠀payload
@@ -128,6 +125,7 @@ def each_client_thread(id, tcp_server_address, udp_server_address):
                 try:
                     #send id
                     for i in range(3):
+                        # try 3 times
                         res = send_tcp(tcp_sock, form_message("ID", str(id), SERVER, str(id)))
                         if res is not None:
                             break

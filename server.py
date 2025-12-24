@@ -22,6 +22,9 @@ message_codes = {
 }
 global user_dict
 user_dict = {}
+#user_dict[addr] = username
+#user_dict[username] = [addr1, addr2,...]
+
 global SERVER
 SERVER = "$S_SERVER"
 #mesage format: code⠀source_username⠀dest_user⠀payload
@@ -33,15 +36,15 @@ def form_message(code, source_user, dest_user, payload):
     return bytes(f"{message_codes[code]}⠀{source_user}⠀{dest_user}⠀{payload}", "utf-8")
 
 def unpack_message(data:bytes):
-    decoded = data.decode()
-    print(decoded)
-    parts = decoded.split("⠀")
-    code = int(parts[0])
-    source_user = parts[1]
-    dest_user = parts[2]
-    payload = parts[3]
-    return code, source_user, dest_user, payload
-    try:pass
+    try:
+        decoded = data.decode()
+        print(decoded)
+        parts = decoded.split("⠀")
+        code = int(parts[0])
+        source_user = parts[1]
+        dest_user = parts[2]
+        payload = parts[3]
+        return code, source_user, dest_user, payload
     except:
         return None, None, None, None
 
@@ -98,6 +101,10 @@ def tcp_client_thread(clientsocket, address, lock):
             print('Client ID is {}'.format(source_user))
             cid = source_user
             user_dict[address] = cid
+            if user_dict[cid]:
+                user_dict[cid].append(address)
+            else:
+                user_dict[cid] = [address]
             response = form_message("GOOD", SERVER, cid, "ID accepted")
             clientsocket.sendall(response)
 
