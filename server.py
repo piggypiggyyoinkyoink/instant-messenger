@@ -1,4 +1,4 @@
-import socket
+import socket, sys
 from threading import Thread, Lock
 
 global message_codes
@@ -27,6 +27,8 @@ user_dict = {}
 
 global SERVER
 SERVER = "$S_SERVER"
+global BROADCAST; BROADCAST = "$S_BROADCAST"
+
 #mesage format: code⠀source_username⠀dest_user⠀payload
 
 def commands(data, cid):
@@ -101,9 +103,9 @@ def tcp_client_thread(clientsocket, address, lock):
             print('Client ID is {}'.format(source_user))
             cid = source_user
             user_dict[address] = cid
-            if user_dict[cid]:
+            try:
                 user_dict[cid].append(address)
-            else:
+            except:
                 user_dict[cid] = [address]
             response = form_message("GOOD", SERVER, cid, "ID accepted")
             clientsocket.sendall(response)
@@ -143,15 +145,22 @@ def a(thread_tcp, thread_udp):
 
 
 lock = Lock()
+try:
+    args = sys.argv[1:]
+    port = (int(args[0]))
+except:
+    print("No port number provided, using default 42000")
+    port = 42000
 # create TCP socket
 tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-tcp_socket.bind((socket.gethostname(), 42000))
+tcp_socket.bind((socket.gethostbyname(socket.gethostname()), port))
+print("Server running on", socket.gethostbyname(socket.gethostname()), "port", port)
 tcp_socket.listen(5)
 thread_tcp = Thread(target=tcp_server_thread, args=(tcp_socket,lock))
 
 #create UDP socket
 udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-udp_socket.bind((socket.gethostname(), 43000))
+udp_socket.bind((socket.gethostname(), port+1000))
 thread_udp = Thread(target=udp_server_thread, args=(udp_socket,lock))
 
 t = Thread(target=a, args=(thread_tcp, thread_udp))

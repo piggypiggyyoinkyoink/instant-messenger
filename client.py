@@ -1,4 +1,4 @@
-import socket, time
+import socket, time, sys
 from threading import Thread, Lock, Semaphore
 
 global message_codes
@@ -21,6 +21,7 @@ message_codes = {
     9 : "DISCONNECT"
 }
 global SERVER; SERVER = "$S_SERVER"
+global BROADCAST; BROADCAST = "$S_BROADCAST"
 global WAITING; WAITING = 0
 global GOOD; GOOD = 1
 global BAD; BAD = 2
@@ -148,13 +149,19 @@ def each_client_thread(id, tcp_server_address, udp_server_address):
 
 
 # Create a TCP/IP socket
-id = "bob"
+try:
+    args = sys.argv[1:]
+    username, hostname, port = (args[0], args[1], int(args[2]))
+except:
+    print("Invalid command line arguments. Using default values.")
+    username, hostname, port = ("default", socket.gethostname(), 42000)
+print(username, hostname, port)
 tcp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 # Connect the socket to the port where the server is listening
-tcp_server_address = (socket.gethostname(), 42000)
+tcp_server_address = (hostname, port)
 print('connecting to {} port {}'.format(*tcp_server_address))
 tcp_sock.connect(tcp_server_address)
 udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-udp_server_address = (socket.gethostname(), 43000)
-thread = Thread(target=each_client_thread, args=(id, tcp_server_address, udp_server_address))
+udp_server_address = (hostname, port+1000)
+thread = Thread(target=each_client_thread, args=(username, tcp_server_address, udp_server_address))
 thread.start()
