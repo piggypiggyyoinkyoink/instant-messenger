@@ -21,8 +21,7 @@ message_codes = {
     9 : "DISCONNECT"
 }
 global user_dict; user_dict = {}
-#user_dict[addr] = username
-#user_dict[username] = [addr1, addr2,...]
+#user_dict[username] = [socket1, socket2,...]
 global client_lock_dict; client_lock_dict = {}
 #client_lock_dict[addr] = Lock()
 global SERVER
@@ -92,18 +91,41 @@ def udp_server_thread(udp_socket, lock):
                 print("No ID for this address, ignoring message")
                 continue
             
-
+def broadcast_message(message, source_user, user_dict_lock:Lock):
+    user_dict_lock.acquire()
+    recipients = []
+    try:
+        for user in user_dict:
+            if user != source_user:
+                recipients.extend(user_dict[user])
+    finally:
+        user_dict_lock.release()
+    if recipients:
+        for recipient in recipients:
+            recipient_lock = client_lock_dict.get(recipient, None)
+            recipient_lock.acquire()
+            try:
+                recipient.sendall(message)
+            except:
+                #recipient offline - do not throw error here as only one recipient failed
+                pass
+            finally:
+                recipient_lock.release()
+    return
 
 def tcp_client_thread(clientsocket, address, user_dict_lock:Lock):
     global client_lock_dict
+    global user_dict
     client_lock_dict[clientsocket] = Lock()
     client_lock = client_lock_dict[clientsocket]
+    cid = None
     try:
         print('connection from', address)
         # Receive the data in small chunks and retransmit it
         try:
             data = clientsocket.recv(9000)
-        except:return
+        except:
+            raise Exception()
         code, source_user, dest_user, message = unpack_message(data)
         print("CODE:", code)
         print("ID:", source_user)
@@ -111,7 +133,6 @@ def tcp_client_thread(clientsocket, address, user_dict_lock:Lock):
             print('Client ID is {}'.format(source_user))
             cid = source_user
             user_dict_lock.acquire()
-            #user_dict[address] = cid
             try:
                 user_dict[cid].append(clientsocket)
             except:
@@ -121,6 +142,8 @@ def tcp_client_thread(clientsocket, address, user_dict_lock:Lock):
             client_lock.acquire()
             clientsocket.sendall(response)
             client_lock.release()
+            broadcast_message(form_message("MESSAGE", SERVER, BROADCAST, f"{cid} has joined"), SERVER, user_dict_lock)
+
 
             while True:
                 try:
@@ -128,7 +151,10 @@ def tcp_client_thread(clientsocket, address, user_dict_lock:Lock):
                 except:
                     #disconnected - need to broadcast message to all clients 
                     print("disconnected")
+                    broadcast_message(form_message("MESSAGE", SERVER, BROADCAST, f"{cid} has left"), SERVER, user_dict_lock)
+                    user_dict_lock.acquire()
                     user_dict[cid].remove(clientsocket)
+                    user_dict_lock.release()
                     return
                 print("DINGUS")
                 try:
@@ -136,24 +162,10 @@ def tcp_client_thread(clientsocket, address, user_dict_lock:Lock):
                     if code == message_codes["COMMAND"]:
                         #clientsocket.sendall(commands(data, cid).encode())
                         continue
+
+
                     if code == message_codes["MESSAGE"] and dest_user == BROADCAST:
-                        user_dict_lock.acquire()
-                        recipients = []
-                        for user in user_dict:
-                            if user != cid:
-                                recipients.extend(user_dict[user])
-                        user_dict_lock.release()
-                        for recipient in recipients:
-                            recipient_lock = client_lock_dict.get(recipient, None)
-                            recipient_lock.acquire()
-                            try:
-                                recipient.sendall(data)
-                            except:
-                                #recipient offline - do not throw error here as only one recipient failed
-                                pass
-                            finally:
-                                recipient_lock.release()
-                        #update user dict to check for disconnected ips - send a ping and check for response
+                        broadcast_message(data, source_user, user_dict_lock)
                         pass
 
                     elif code == message_codes["MESSAGE"] and dest_user != SERVER:
@@ -176,19 +188,14 @@ def tcp_client_thread(clientsocket, address, user_dict_lock:Lock):
                                 client_lock.release()
                             finally:
                                 recipient_lock.release()
-                            print('sending data back to the client')
-                        response = form_message("GOOD", SERVER, cid, "Message sent successfully")
-                        client_lock.acquire()
-                        clientsocket.sendall(response)
-                        client_lock.release()
-                        continue
+                        pass
                     if code == message_codes["PING"]:
                         print("pong")
                         continue
                     print("Received " + message + " from " + cid)
                     if data:
                         print('sending data back to the client')
-                        response = form_message("GOOD", SERVER, cid, message)
+                        response = form_message("GOOD", SERVER, cid, "Message sent successfully")
                         client_lock.acquire()
                         clientsocket.sendall(response)
                         client_lock.release()
@@ -210,7 +217,12 @@ def tcp_client_thread(clientsocket, address, user_dict_lock:Lock):
 
     finally:
         # Clean up the connection
-        user_dict[cid].remove(clientsocket)
+        user_dict_lock.acquire()
+        try:
+            user_dict[cid].remove(clientsocket)
+        except:pass
+        finally:
+            user_dict_lock.release()
         client_lock_dict.pop(clientsocket)
         clientsocket.close()
 

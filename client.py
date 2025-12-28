@@ -144,7 +144,20 @@ def client_receive_thread(tcp_sock):
                     status = GOOD
                 elif code == message_codes["BAD"]:
                     status = BAD
-                    print(Fore.RED + f"[SERVER]: {message}\n")
+                    print(Fore.RED + f"[SERVER]:  {message}\n")
+                elif dest_user == BROADCAST:
+                    # incoming message is a server broadcast (join/leave message)
+                    print("")
+                    print(Fore.LIGHTRED_EX +f"\033[F"+ f"[SERVER]:  {message}" + f"\033[K")
+                
+                if code == message_codes["MESSAGE"]:
+                    if recipient != BROADCAST:
+                        # in chat mode
+                        print(Fore.CYAN + "me -> " + recipient + ":  "+ f"\033[K", end='', flush=True)
+                    else:
+                        # in broadcast mode
+                        print(Fore.MAGENTA + "[BROADCAST]" + " me:  "+ f"\033[K", end='', flush=True)
+
         else:
             print(Fore.RED + "Connection closed by server")
             tcp_sock.close()
@@ -185,7 +198,7 @@ def each_client_thread(id, tcp_server_address, udp_server_address):
                 # p_thread = Thread(target=ping_thread, args=(tcp_sock, id))
                 # p_thread.daemon = True
                 # p_thread.start()
-                print(Fore.GREEN + "Connected. Enter /chat <username> to chat and /kill to quit.")
+                print(Fore.GREEN + f"\033[F"+"Connected. Enter /chat <username> to chat and /kill to quit."+f"\033[K")
             except: 
                 print(Fore.RED + "Failed to setup connection")
                 tcp_sock.close()
