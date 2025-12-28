@@ -97,7 +97,7 @@ def send_udp(udp_sock:socket.socket, server_address, message):
     finally:
         return
 
-
+#not currently in use, not sure if needed
 def ping_thread(tcp_sock, username):
     while True:
         time.sleep(10)
@@ -124,7 +124,7 @@ def client_receive_thread(tcp_sock):
             if message_codes[code] != "PING" and source_user != SERVER:
                 print("")
                 print(Fore.LIGHTBLUE_EX +f"\033[F"+f"{source_user} -> me:  {message}" + f"\033[K")
-                print(Fore.CYAN + "me -> " + source_user + ":  "+ f"\033[K", end='', flush=True)
+                print(Fore.CYAN + "me -> " + recipient + ":  "+ f"\033[K", end='', flush=True)
             if source_user == SERVER:
                 if code == message_codes["GOOD"]:
                     status = GOOD
@@ -168,9 +168,9 @@ def each_client_thread(id, tcp_server_address, udp_server_address):
                         break
                 if res is None:
                     raise Exception(Fore.RED + "Failed to setup connection")
-                p_thread = Thread(target=ping_thread, args=(tcp_sock, id))
-                p_thread.daemon = True
-                p_thread.start()
+                # p_thread = Thread(target=ping_thread, args=(tcp_sock, id))
+                # p_thread.daemon = True
+                # p_thread.start()
                 print(Fore.GREEN + "Connected. Enter /chat <username> to chat and /kill to quit.")
             except: 
                 print(Fore.RED + "Failed to setup connection")
