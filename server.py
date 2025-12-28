@@ -5,7 +5,9 @@ global message_codes
 message_codes = {
     "ID" : 0,
     "MESSAGE" : 1,
-    "COMMAND" : 2,
+    "GROUP_MESSAGE":11,
+    "JOIN" : 21,
+    "LEAVE" : 22,
     "PING" : 3,
     "QUERY" : 4,
     "BAD" : 67,
@@ -13,7 +15,9 @@ message_codes = {
     "DISCONNECT" : 9,
     0 : "ID",
     1 : "MESSAGE",
-    2 : "COMMAND",
+    11: "GROUP_MESSAGE",
+    21 : "JOIN",
+    22 : "LEAVE",
     3 : "PING",
     4 : "QUERY",
     67: "BAD",
@@ -24,14 +28,16 @@ global user_dict; user_dict = {}
 #user_dict[username] = [socket1, socket2,...]
 global client_lock_dict; client_lock_dict = {}
 #client_lock_dict[addr] = Lock()
+global group_dict; group_dict = {}
+#group_dict[group_name] = [username1, username2,...]
 global SERVER
 SERVER = "$S_SERVER"
 global BROADCAST; BROADCAST = "$S_BROADCAST"
 
 #mesage format: code⠀source_username⠀dest_user⠀payload
 
-def commands(data, cid):
-    return "Invalid command"
+# def commands(data, cid):
+#     return 
 
 
 
@@ -52,13 +58,13 @@ def unpack_message(data:bytes):
         return None, None, None, None
 
 
-def tcp_server_thread(tcp_socket, lock):
+def tcp_server_thread(tcp_socket, user_dict_lock, group_dict_lock):
     while True:
         # accept connections from outside
         (clientsocket, address) = tcp_socket.accept()
         print(address)
         try:
-            thread = Thread(target=tcp_client_thread, args=(clientsocket, address, lock))
+            thread = Thread(target=tcp_client_thread, args=(clientsocket, address, user_dict_lock, group_dict_lock))
             thread.start()
         except:
             print("Error: unable to start thread")
@@ -79,9 +85,9 @@ def udp_server_thread(udp_socket, lock):
                 cid = ids[addr]
                 print('connection from', cid)
                 print('received {!r}'.format(data.decode()))
-                if data.decode()[0] == "/":
-                    udp_socket.sendto(commands(data, cid).encode(), addr)
-                    continue
+                # if data.decode()[0] == "/":
+                #     udp_socket.sendto(commands(data, cid).encode(), addr)
+                #     continue
                 if data:
                     print('sending data back to the client')
                     udp_socket.sendto(data, addr)
@@ -113,7 +119,35 @@ def broadcast_message(message, source_user, user_dict_lock:Lock):
                 recipient_lock.release()
     return
 
-def tcp_client_thread(clientsocket, address, user_dict_lock:Lock):
+def groupcast_message(message, group_name, user_dict_lock:Lock, group_dict_lock:Lock):
+    group_dict_lock.acquire()
+    try:
+        members = group_dict.get(group_name, [])
+    finally:
+        group_dict_lock.release()
+    if not members:
+        return
+    user_dict_lock.acquire()
+    recipients = []
+    try:
+        for member in members:
+            recipients.extend(user_dict.get(member, []))
+    finally:
+        user_dict_lock.release()
+    if recipients:
+        for recipient in recipients:
+            recipient_lock = client_lock_dict.get(recipient, None)
+            recipient_lock.acquire()
+            try:
+                recipient.sendall(message)
+            except:
+                #recipient offline - do not throw error here as only one recipient failed
+                pass
+            finally:
+                recipient_lock.release()
+    return
+
+def tcp_client_thread(clientsocket, address, user_dict_lock:Lock, group_dict_lock:Lock):
     global client_lock_dict
     global user_dict
     client_lock_dict[clientsocket] = Lock()
@@ -144,31 +178,53 @@ def tcp_client_thread(clientsocket, address, user_dict_lock:Lock):
             client_lock.release()
             broadcast_message(form_message("MESSAGE", SERVER, BROADCAST, f"{cid} has joined"), SERVER, user_dict_lock)
 
-
             while True:
                 try:
                     data = clientsocket.recv(9000) #what if its over 9000?
                 except:
-                    #disconnected - need to broadcast message to all clients 
+                    #disconnected
                     print("disconnected")
+                    #broadcast leave message
                     broadcast_message(form_message("MESSAGE", SERVER, BROADCAST, f"{cid} has left"), SERVER, user_dict_lock)
+                    #remove inactive socket from dictionary
                     user_dict_lock.acquire()
                     user_dict[cid].remove(clientsocket)
                     user_dict_lock.release()
                     return
-                print("DINGUS")
                 try:
                     code, source_user, dest_user, message = unpack_message(data)
-                    if code == message_codes["COMMAND"]:
-                        #clientsocket.sendall(commands(data, cid).encode())
-                        continue
+                    if code == message_codes["JOIN"]:
+                        group_name = message
+                        group_dict_lock.acquire()
+                        if source_user not in group_dict.get(group_name, []):
+                            try:
+                                group_dict[group_name].append(source_user)
+                            except:
+                                group_dict[group_name] = [source_user]
+                            finally:
+                                group_dict_lock.release()
+                            groupcast_message(form_message("MESSAGE", SERVER, group_name, f"{source_user} has joined group {group_name}"), group_name, user_dict_lock, group_dict_lock)
+                        pass
+                    elif code == message_codes["LEAVE"]:
+                        group_name = message
+                        group_dict_lock.acquire()
+                        try:
+                            group_dict[group_name].remove(source_user)
+                        except:
+                            pass
+                        finally:
+                            group_dict_lock.release()
+                        groupcast_message(form_message("MESSAGE", SERVER, group_name, f"{source_user} has left group {group_name}"), group_name, user_dict_lock, group_dict_lock)
+                        pass
 
 
                     if code == message_codes["MESSAGE"] and dest_user == BROADCAST:
+                        #retransmit to all clients except source_user
                         broadcast_message(data, source_user, user_dict_lock)
                         pass
 
                     elif code == message_codes["MESSAGE"] and dest_user != SERVER:
+                        #retransmit to all active sockets corresponding to dest_user
                         user_dict_lock.acquire()
                         recipients = user_dict.get(dest_user, [])
                         user_dict_lock.release()
@@ -236,6 +292,7 @@ def a(thread_tcp, thread_udp):
 
 
 user_dict_lock = Lock()
+group_dict_lock = Lock()
 try:
     args = sys.argv[1:]
     port = (int(args[0]))
@@ -247,7 +304,7 @@ tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 tcp_socket.bind((socket.gethostbyname(socket.gethostname()), port))
 print("Server running on", socket.gethostbyname(socket.gethostname()), "port", port)
 tcp_socket.listen(5)
-thread_tcp = Thread(target=tcp_server_thread, args=(tcp_socket,user_dict_lock))
+thread_tcp = Thread(target=tcp_server_thread, args=(tcp_socket,user_dict_lock, group_dict_lock))
 
 #create UDP socket
 udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
