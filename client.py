@@ -1,5 +1,6 @@
 import socket, time, sys
 from threading import Thread, Lock, Semaphore
+from colorama import Fore, Back, Style
 
 global message_codes
 message_codes = {
@@ -54,20 +55,20 @@ def send_tcp(tcp_sock, message):
     lock.acquire()
     global status
     status = WAITING
-    print('sending {!r}'.format(message.decode("utf-8")))
+    print(Fore.YELLOW + 'sending {!r}'.format(message.decode("utf-8")))
     tcp_sock.sendall(message)
     t1 = time.time()
     while status == WAITING:
         time.sleep(0.1)
         if time.time() - t1 > 5:
-            print("Timeout waiting for response")
+            print(Fore.RED + "Timeout waiting for response")
             break
     lock.release()
     if status == GOOD:
-        print("Message sent successfully")
+        print(Fore.GREEN + "Message sent successfully")
         return 1
     else:
-        print("Message failed to send")
+        print(Fore.RED + "Message failed to send")
         return None
 
 
@@ -103,7 +104,7 @@ def client_receive_thread(tcp_sock):
                 elif code == message_codes["BAD"]:
                     status = BAD
         else:
-            print("Connection closed by server")
+            print(Fore.RED + "Connection closed by server")
             tcp_sock.close()
             return
 
@@ -114,14 +115,15 @@ def each_client_thread(id, tcp_server_address, udp_server_address):
     message = ""
     tcp_sock = None
     udp_sock = None
-    message = input()
+    message = input(Fore.CYAN + "")
     while message != "/kill":
         if protocol == TCP:
             if tcp_sock is None:
                 tcp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                print('connecting to {} port {}'.format(*tcp_server_address))
+                print(Fore.YELLOW + 'connecting to {} port {}'.format(*tcp_server_address))
                 tcp_sock.connect(tcp_server_address)
                 rec_thread = Thread(target=client_receive_thread, args=(tcp_sock,))
+                rec_thread.daemon = True
                 rec_thread.start()
                 try:
                     #send id
@@ -131,20 +133,20 @@ def each_client_thread(id, tcp_server_address, udp_server_address):
                         if res is not None:
                             break
                     if res is None:
-                        raise Exception("Failed to setup connection")
+                        raise Exception(Fore.RED + "Failed to setup connection")
                 except: 
-                    print("Failed to setup connection")
+                    print(Fore.RED + "Failed to setup connection")
                     tcp_sock.close()
                     return
             try:
                 send_tcp(tcp_sock, form_message("MESSAGE", str(id), SERVER, message))
             except:
-                print("Connection lost")
+                print(Fore.RED + "Connection lost")
                 tcp_sock.close()
                 tcp_sock = None
 
             
-        message = input()
+        message = input(Fore.CYAN + "")
 
 
 
@@ -153,13 +155,13 @@ try:
     args = sys.argv[1:]
     username, hostname, port = (args[0], args[1], int(args[2]))
 except:
-    print("Invalid command line arguments. Using default values.")
+    print(Fore.RED + "Invalid command line arguments. Using default values.")
     username, hostname, port = ("default", socket.gethostname(), 42000)
 print(username, hostname, port)
 tcp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 # Connect the socket to the port where the server is listening
 tcp_server_address = (hostname, port)
-print('connecting to {} port {}'.format(*tcp_server_address))
+print(Fore.YELLOW + 'connecting to {} port {}'.format(*tcp_server_address))
 tcp_sock.connect(tcp_server_address)
 udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 udp_server_address = (hostname, port+1000)
