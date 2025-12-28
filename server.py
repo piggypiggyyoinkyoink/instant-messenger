@@ -34,12 +34,7 @@ global BROADCAST; BROADCAST = "$S_BROADCAST"
 def commands(data, cid):
     return "Invalid command"
 
-# def check_user_dict():
-#     for user in user_dict:
-#         for addr in user_dict[user]:
-#             print('pinging ', addr)
-#             ping = form_message("PING", SERVER, user, "ping")
-#             clientsocket.sendall(ping)
+
 
 def form_message(code, source_user, dest_user, payload):
     return bytes(f"{message_codes[code]}⠀{source_user}⠀{dest_user}⠀{payload}", "utf-8")

@@ -130,7 +130,7 @@ def client_receive_thread(tcp_sock):
                     status = GOOD
                 elif code == message_codes["BAD"]:
                     status = BAD
-                    print(Fore.RED + f"[SERVER]: {message}")
+                    print(Fore.RED + f"[SERVER]: {message}\n")
         else:
             print(Fore.RED + "Connection closed by server")
             tcp_sock.close()
@@ -142,13 +142,14 @@ def each_client_thread(id, tcp_server_address, udp_server_address):
     #protocol = TCP
     tcp_sock = None
     udp_sock = None
-    message = input(Fore.CYAN + "")
+    #message = input(Fore.CYAN + "")
+    message = "-"
     global recipient
     recipient = SERVER
     while message != "/kill":
         if tcp_sock is None:
             tcp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            print(Fore.YELLOW + 'connecting to {} port {}'.format(*tcp_server_address))
+            print(Fore.YELLOW + 'Connecting to {} port {}'.format(*tcp_server_address))
             try:
                 tcp_sock.connect(tcp_server_address)
             except:
@@ -170,6 +171,7 @@ def each_client_thread(id, tcp_server_address, udp_server_address):
                 p_thread = Thread(target=ping_thread, args=(tcp_sock, id))
                 p_thread.daemon = True
                 p_thread.start()
+                print(Fore.GREEN + "Connected. Enter /chat <username> to chat and /kill to quit.")
             except: 
                 print(Fore.RED + "Failed to setup connection")
                 tcp_sock.close()
@@ -183,8 +185,7 @@ def each_client_thread(id, tcp_server_address, udp_server_address):
             continue
         elif message.startswith("/chat "):
             recipient = message[len("/chat "):]
-            print(Fore.YELLOW + f"Chatting with {recipient}")
-            #message = input(Fore.CYAN + "")
+            print(Fore.YELLOW + f"\033[F"+f"Chatting with {recipient}"+f"\033[K")
         else:
 
             try:
@@ -215,7 +216,6 @@ print(username, hostname, port)
 # Connect the socket to the port where the server is listening
 tcp_server_address = (hostname, port)
 #print(Fore.YELLOW + 'connecting to {} port {}'.format(*tcp_server_address))
-print(Fore.YELLOW +"Send a message to initialise the connection")
 udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 udp_server_address = (hostname, port+1000)
 thread = Thread(target=each_client_thread, args=(username, tcp_server_address, udp_server_address))
