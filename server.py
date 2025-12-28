@@ -120,6 +120,7 @@ def broadcast_message(message, source_user, user_dict_lock:Lock):
     return
 
 def groupcast_message(message, group_name, user_dict_lock:Lock, group_dict_lock:Lock):
+    code, source_user, dest_user, payload = unpack_message(message)
     group_dict_lock.acquire()
     try:
         members = group_dict.get(group_name, [])
@@ -131,7 +132,8 @@ def groupcast_message(message, group_name, user_dict_lock:Lock, group_dict_lock:
     recipients = []
     try:
         for member in members:
-            recipients.extend(user_dict.get(member, []))
+            if member != source_user:
+                recipients.extend(user_dict.get(member, []))
     finally:
         user_dict_lock.release()
     if recipients:
@@ -221,6 +223,10 @@ def tcp_client_thread(clientsocket, address, user_dict_lock:Lock, group_dict_loc
                         except:pass
                         finally:
                             client_lock.release()
+                        pass
+                    elif code == message_codes["GROUP_MESSAGE"]:
+                        group_name = dest_user
+                        groupcast_message(form_message("MESSAGE", source_user, group_name, message), group_name, user_dict_lock, group_dict_lock)
                         pass
 
 
