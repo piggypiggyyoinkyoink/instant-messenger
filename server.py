@@ -20,11 +20,11 @@ message_codes = {
     69: "GOOD",
     9 : "DISCONNECT"
 }
-global user_dict
-user_dict = {}
+global user_dict; user_dict = {}
 #user_dict[addr] = username
 #user_dict[username] = [addr1, addr2,...]
-
+global client_lock_dict; client_lock_dict = {}
+#client_lock_dict[addr] = Lock()
 global SERVER
 SERVER = "$S_SERVER"
 global BROADCAST; BROADCAST = "$S_BROADCAST"
@@ -98,7 +98,10 @@ def udp_server_thread(udp_socket, lock):
             
 
 
-def tcp_client_thread(clientsocket, address, lock):
+def tcp_client_thread(clientsocket, address, user_dict_lock:Lock):
+    global client_lock_dict
+    client_lock_dict[address] = Lock()
+    client_lock = client_lock_dict[address]
     try:
         print('connection from', address)
         # Receive the data in small chunks and retransmit it
@@ -111,13 +114,17 @@ def tcp_client_thread(clientsocket, address, lock):
         if code == message_codes["ID"] and source_user is not None:
             print('Client ID is {}'.format(source_user))
             cid = source_user
-            user_dict[address] = cid
+            user_dict_lock.acquire()
+            #user_dict[address] = cid
             try:
                 user_dict[cid].append(address)
             except:
                 user_dict[cid] = [address]
+            user_dict_lock.release()
             response = form_message("GOOD", SERVER, cid, "ID accepted")
+            client_lock.acquire()
             clientsocket.sendall(response)
+            client_lock.release()
 
             while True:
                 try:
@@ -125,6 +132,7 @@ def tcp_client_thread(clientsocket, address, lock):
                 except:
                     #disconnected - need to broadcast message to all clients 
                     print("disconnected")
+                    user_dict[cid].remove(address)
                     return
                 print("DINGUS")
                 try:
@@ -145,21 +153,29 @@ def tcp_client_thread(clientsocket, address, lock):
                     if data:
                         print('sending data back to the client')
                         response = form_message("GOOD", SERVER, cid, message)
+                        client_lock.acquire()
                         clientsocket.sendall(response)
+                        client_lock.release()
                     else:
                         print('no data from', cid)
                         break
                 except:
+                    client_lock.acquire()
                     clientsocket.sendall(form_message("BAD", SERVER, cid, "Error processing message"))
+                    client_lock.release()
                     continue
         else:
             print("No ID received, closing connection")
+            client_lock.acquire()
             clientsocket.sendall(form_message("BAD", SERVER, source_user, "No ID received"))
+            client_lock.release()
             clientsocket.close()
             return
 
     finally:
         # Clean up the connection
+        user_dict[cid].remove(address)
+        client_lock_dict.pop(address)
         clientsocket.close()
 
 def a(thread_tcp, thread_udp):
@@ -171,7 +187,7 @@ def a(thread_tcp, thread_udp):
     return
 
 
-lock = Lock()
+user_dict_lock = Lock()
 try:
     args = sys.argv[1:]
     port = (int(args[0]))
@@ -183,12 +199,12 @@ tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 tcp_socket.bind((socket.gethostbyname(socket.gethostname()), port))
 print("Server running on", socket.gethostbyname(socket.gethostname()), "port", port)
 tcp_socket.listen(5)
-thread_tcp = Thread(target=tcp_server_thread, args=(tcp_socket,lock))
+thread_tcp = Thread(target=tcp_server_thread, args=(tcp_socket,user_dict_lock))
 
 #create UDP socket
 udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 udp_socket.bind((socket.gethostname(), port+1000))
-thread_udp = Thread(target=udp_server_thread, args=(udp_socket,lock))
+thread_udp = Thread(target=udp_server_thread, args=(udp_socket,user_dict_lock))
 
 t = Thread(target=a, args=(thread_tcp, thread_udp))
 t.start()    
