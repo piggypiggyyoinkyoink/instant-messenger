@@ -153,7 +153,7 @@ def client_receive_thread(tcp_sock):
                 elif code == message_codes["BAD"]:
                     status = BAD
                     print(Fore.RED + f"[SERVER]:  {message}\n")
-                elif dest_user != username:
+                elif code == message_codes["MESSAGE"] or code == message_codes["GROUP_MESSAGE"]:
                     # incoming message is a server broadcast (join/leave message)
                     print("")
                     print(Fore.LIGHTRED_EX +f"\033[F"+ f"[SERVER]:  {message}" + f"\033[K")
@@ -182,6 +182,7 @@ def each_client_thread(id, tcp_server_address, udp_server_address):
     message = "-"
     global recipient
     recipient = SERVER
+    mode = "chat"
     while message != "/kill":
         if tcp_sock is None:
             tcp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -213,6 +214,8 @@ def each_client_thread(id, tcp_server_address, udp_server_address):
                 tcp_sock.close()
                 return
         
+        output_prompt = True
+
         if message.startswith("/broadcast"):
             recipient = BROADCAST
             print(Fore.YELLOW + f"\033[F"+ "Entering broadcast mode"+f"\033[K")
@@ -220,12 +223,18 @@ def each_client_thread(id, tcp_server_address, udp_server_address):
             # print(message)
             # continue
         elif message.startswith("/chat "):
+            mode = "chat"
             recipient = message[len("/chat "):]
             print(Fore.YELLOW + f"\033[F"+f"Chatting with {recipient}"+f"\033[K")
+        elif message.startswith("/gc "):
+            mode = "groupchat"
+            recipient = message[len("/gc "):]
+            print(Fore.YELLOW + f"\033[F"+f"Group chatting in {recipient}"+f"\033[K")
         elif message.startswith("/join "):
             group_name = message[len("/join "):]
             try:
                 send_tcp(tcp_sock, form_message("JOIN", str(id), SERVER, group_name))
+                output_prompt = False
             except:
                 print(Fore.RED + "Connection lost")
                 tcp_sock.close()
@@ -234,6 +243,7 @@ def each_client_thread(id, tcp_server_address, udp_server_address):
             group_name = message[len("/leave "):]
             try:
                 send_tcp(tcp_sock, form_message("LEAVE", str(id), SERVER, group_name))
+                output_prompt = False
             except:
                 print(Fore.RED + "Connection lost")
                 tcp_sock.close()
@@ -241,16 +251,21 @@ def each_client_thread(id, tcp_server_address, udp_server_address):
 
         else:
             try:
-                send_tcp(tcp_sock, form_message("MESSAGE", str(id), recipient, message))
+                if mode == "chat":
+                    send_tcp(tcp_sock, form_message("MESSAGE", str(id), recipient, message))
+                elif mode == "groupchat":
+                    send_tcp(tcp_sock, form_message("GROUP_MESSAGE", str(id), recipient, message))
             except:
                 print(Fore.RED + "Connection lost")
                 tcp_sock.close()
                 tcp_sock = None
-
-        if recipient != BROADCAST:    
-            message = input(Fore.CYAN + "me -> " + recipient + ":  ")
+        if output_prompt:
+            if recipient != BROADCAST:    
+                message = input(Fore.CYAN + "me -> " + recipient + ":  ")
+            else:
+                message = input(Fore.MAGENTA + "[BROADCAST]" + " me:  ")
         else:
-            message = input(Fore.MAGENTA + "[BROADCAST]" + " me:  ")
+            message = input(Fore.CYAN + "")
     try:
         tcp_sock.close()
     except:return

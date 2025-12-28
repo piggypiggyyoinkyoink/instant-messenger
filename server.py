@@ -155,7 +155,6 @@ def tcp_client_thread(clientsocket, address, user_dict_lock:Lock, group_dict_loc
     cid = None
     try:
         print('connection from', address)
-        # Receive the data in small chunks and retransmit it
         try:
             data = clientsocket.recv(9000)
         except:
@@ -195,8 +194,8 @@ def tcp_client_thread(clientsocket, address, user_dict_lock:Lock, group_dict_loc
                     code, source_user, dest_user, message = unpack_message(data)
                     if code == message_codes["JOIN"]:
                         group_name = message
-                        group_dict_lock.acquire()
                         if source_user not in group_dict.get(group_name, []):
+                            group_dict_lock.acquire()
                             try:
                                 group_dict[group_name].append(source_user)
                             except:
@@ -210,11 +209,18 @@ def tcp_client_thread(clientsocket, address, user_dict_lock:Lock, group_dict_loc
                         group_dict_lock.acquire()
                         try:
                             group_dict[group_name].remove(source_user)
+                            print("left group", group_name)
                         except:
                             pass
                         finally:
                             group_dict_lock.release()
                         groupcast_message(form_message("MESSAGE", SERVER, group_name, f"{source_user} has left group {group_name}"), group_name, user_dict_lock, group_dict_lock)
+                        client_lock.acquire()
+                        try:
+                            clientsocket.sendall(form_message("MESSAGE", SERVER, cid, f"Left group {group_name}"))
+                        except:pass
+                        finally:
+                            client_lock.release()
                         pass
 
 
