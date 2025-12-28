@@ -34,6 +34,13 @@ global BROADCAST; BROADCAST = "$S_BROADCAST"
 def commands(data, cid):
     return "Invalid command"
 
+# def check_user_dict():
+#     for user in user_dict:
+#         for addr in user_dict[user]:
+#             print('pinging ', addr)
+#             ping = form_message("PING", SERVER, user, "ping")
+#             clientsocket.sendall(ping)
+
 def form_message(code, source_user, dest_user, payload):
     return bytes(f"{message_codes[code]}⠀{source_user}⠀{dest_user}⠀{payload}", "utf-8")
 
@@ -95,7 +102,9 @@ def tcp_client_thread(clientsocket, address, lock):
     try:
         print('connection from', address)
         # Receive the data in small chunks and retransmit it
-        data = clientsocket.recv(9000)
+        try:
+            data = clientsocket.recv(9000)
+        except:return
         code, source_user, dest_user, message = unpack_message(data)
         print("CODE:", code)
         print("ID:", source_user)
@@ -111,20 +120,38 @@ def tcp_client_thread(clientsocket, address, lock):
             clientsocket.sendall(response)
 
             while True:
-                data = clientsocket.recv(9000) #what if its over 9000?
-                code, source_user, dest_user, message = unpack_message(data)
-                if code == "COMMAND":
-                    #clientsocket.sendall(commands(data, cid).encode())
+                try:
+                    data = clientsocket.recv(9000) #what if its over 9000?
+                except:
+                    #disconnected - need to broadcast message to all clients 
+                    print("disconnected")
+                    return
+                print("DINGUS")
+                try:
+                    code, source_user, dest_user, message = unpack_message(data)
+                    if code == message_codes["COMMAND"]:
+                        #clientsocket.sendall(commands(data, cid).encode())
+                        continue
+                    if code == message_codes["MESSAGE"] and dest_user is BROADCAST:
+                        #update user dict to check for disconnected ips - send a ping and check for response
+                        pass
+
+                    if code == message_codes["MESSAGE"] and dest_user is not SERVER:
+                        pass
+                    if code == message_codes["PING"]:
+                        print("pong")
+                        continue
+                    print("Received " + message + " from " + cid)
+                    if data:
+                        print('sending data back to the client')
+                        response = form_message("GOOD", SERVER, cid, message)
+                        clientsocket.sendall(response)
+                    else:
+                        print('no data from', cid)
+                        break
+                except:
+                    clientsocket.sendall(form_message("BAD", SERVER, cid, "Error processing message"))
                     continue
-                
-                print("Received " + message + " from " + cid)
-                if data:
-                    print('sending data back to the client')
-                    response = form_message("GOOD", SERVER, cid, message)
-                    clientsocket.sendall(response)
-                else:
-                    print('no data from', cid)
-                    break
         else:
             print("No ID received, closing connection")
             clientsocket.sendall(form_message("BAD", SERVER, source_user, "No ID received"))
