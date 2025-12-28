@@ -57,6 +57,7 @@ def unpack_message(data:bytes):
     except:
         return None, None, None, None
 
+
 def tcp_server_thread(tcp_socket, lock):
     while True:
         # accept connections from outside
@@ -100,8 +101,8 @@ def udp_server_thread(udp_socket, lock):
 
 def tcp_client_thread(clientsocket, address, user_dict_lock:Lock):
     global client_lock_dict
-    client_lock_dict[address] = Lock()
-    client_lock = client_lock_dict[address]
+    client_lock_dict[clientsocket] = Lock()
+    client_lock = client_lock_dict[clientsocket]
     try:
         print('connection from', address)
         # Receive the data in small chunks and retransmit it
@@ -117,9 +118,9 @@ def tcp_client_thread(clientsocket, address, user_dict_lock:Lock):
             user_dict_lock.acquire()
             #user_dict[address] = cid
             try:
-                user_dict[cid].append(address)
+                user_dict[cid].append(clientsocket)
             except:
-                user_dict[cid] = [address]
+                user_dict[cid] = [clientsocket]
             user_dict_lock.release()
             response = form_message("GOOD", SERVER, cid, "ID accepted")
             client_lock.acquire()
@@ -132,7 +133,7 @@ def tcp_client_thread(clientsocket, address, user_dict_lock:Lock):
                 except:
                     #disconnected - need to broadcast message to all clients 
                     print("disconnected")
-                    user_dict[cid].remove(address)
+                    user_dict[cid].remove(clientsocket)
                     return
                 print("DINGUS")
                 try:
@@ -141,11 +142,32 @@ def tcp_client_thread(clientsocket, address, user_dict_lock:Lock):
                         #clientsocket.sendall(commands(data, cid).encode())
                         continue
                     if code == message_codes["MESSAGE"] and dest_user is BROADCAST:
+                        
                         #update user dict to check for disconnected ips - send a ping and check for response
                         pass
 
-                    if code == message_codes["MESSAGE"] and dest_user is not SERVER:
-                        pass
+                    if code == message_codes["MESSAGE"] and dest_user != SERVER:
+                        print("oi")
+                        user_dict_lock.acquire()
+                        recipients = user_dict.get(dest_user, [])
+                        user_dict_lock.release()
+                        for recipient in recipients:
+                            recipient_lock = client_lock_dict.get(recipient, None)
+                            recipient_lock.acquire()
+                            try:
+                                recipient.sendall(data)
+                            except:
+                                client_lock.acquire()
+                                clientsocket.sendall(form_message("BAD", SERVER, cid, "Recipient is offline"))
+                                client_lock.release()
+                            finally:
+                                recipient_lock.release()
+                            print('sending data back to the client')
+                        response = form_message("GOOD", SERVER, cid, "Message sent successfully")
+                        client_lock.acquire()
+                        clientsocket.sendall(response)
+                        client_lock.release()
+                        continue
                     if code == message_codes["PING"]:
                         print("pong")
                         continue
@@ -174,8 +196,8 @@ def tcp_client_thread(clientsocket, address, user_dict_lock:Lock):
 
     finally:
         # Clean up the connection
-        user_dict[cid].remove(address)
-        client_lock_dict.pop(address)
+        user_dict[cid].remove(clientsocket)
+        client_lock_dict.pop(clientsocket)
         clientsocket.close()
 
 def a(thread_tcp, thread_udp):
