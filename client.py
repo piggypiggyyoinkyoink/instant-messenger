@@ -112,7 +112,7 @@ def each_client_thread(id, tcp_server_address, udp_server_address):
     TCP = 1
     UDP = 2
     protocol = TCP
-    message = ""
+    message = "-"
     tcp_sock = None
     udp_sock = None
     message = input(Fore.CYAN + "")
@@ -147,6 +147,8 @@ def each_client_thread(id, tcp_server_address, udp_server_address):
 
             
         message = input(Fore.CYAN + "")
+    print(Fore.YELLOW + "Exited instant messenger")
+    print(Style.RESET_ALL)
 
 
 
@@ -161,7 +163,8 @@ print(username, hostname, port)
 tcp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 # Connect the socket to the port where the server is listening
 tcp_server_address = (hostname, port)
-print(Fore.YELLOW + 'connecting to {} port {}'.format(*tcp_server_address))
+#print(Fore.YELLOW + 'connecting to {} port {}'.format(*tcp_server_address))
+print(Fore.YELLOW +"Send a message to initialise the connection")
 tcp_sock.connect(tcp_server_address)
 udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 udp_server_address = (hostname, port+1000)
