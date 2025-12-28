@@ -136,12 +136,27 @@ def tcp_client_thread(clientsocket, address, user_dict_lock:Lock):
                     if code == message_codes["COMMAND"]:
                         #clientsocket.sendall(commands(data, cid).encode())
                         continue
-                    if code == message_codes["MESSAGE"] and dest_user is BROADCAST:
-                        
+                    if code == message_codes["MESSAGE"] and dest_user == BROADCAST:
+                        user_dict_lock.acquire()
+                        recipients = []
+                        for user in user_dict:
+                            if user != cid:
+                                recipients.extend(user_dict[user])
+                        user_dict_lock.release()
+                        for recipient in recipients:
+                            recipient_lock = client_lock_dict.get(recipient, None)
+                            recipient_lock.acquire()
+                            try:
+                                recipient.sendall(data)
+                            except:
+                                #recipient offline - do not throw error here as only one recipient failed
+                                pass
+                            finally:
+                                recipient_lock.release()
                         #update user dict to check for disconnected ips - send a ping and check for response
                         pass
 
-                    if code == message_codes["MESSAGE"] and dest_user != SERVER:
+                    elif code == message_codes["MESSAGE"] and dest_user != SERVER:
                         user_dict_lock.acquire()
                         recipients = user_dict.get(dest_user, [])
                         user_dict_lock.release()

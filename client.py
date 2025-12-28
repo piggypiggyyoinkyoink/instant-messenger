@@ -117,14 +117,28 @@ def client_receive_thread(tcp_sock):
             data = tcp_sock.recv(5000)
         except:
             print(Fore.RED + "Connection lost")
-            tcp_sock.close()
+            try:
+                tcp_sock.close()
+            except:pass
             return
         if data:
             code, source_user, dest_user, message = unpack_message(data)
             if message_codes[code] != "PING" and source_user != SERVER:
-                print("")
-                print(Fore.LIGHTBLUE_EX +f"\033[F"+f"{source_user} -> me:  {message}" + f"\033[K")
-                print(Fore.CYAN + "me -> " + recipient + ":  "+ f"\033[K", end='', flush=True)
+                if dest_user == BROADCAST:
+                    # incoming message is a broadcast
+                    print("")
+                    print(Fore.MAGENTA +f"\033[F"+ f"[BROADCAST] {source_user}:  {message}" + f"\033[K")
+                else:
+                    # incoming message is a unicast
+                    print("")
+                    print(Fore.LIGHTBLUE_EX +f"\033[F"+f"{source_user} -> me:  {message}" + f"\033[K")
+                
+                if recipient != BROADCAST:
+                    # in chat mode
+                    print(Fore.CYAN + "me -> " + recipient + ":  "+ f"\033[K", end='', flush=True)
+                else:
+                    # in broadcast mode
+                    print(Fore.MAGENTA + "[BROADCAST]" + " me:  "+ f"\033[K", end='', flush=True)
             if source_user == SERVER:
                 if code == message_codes["GOOD"]:
                     status = GOOD
@@ -177,12 +191,12 @@ def each_client_thread(id, tcp_server_address, udp_server_address):
                 tcp_sock.close()
                 return
         
-        if message.startswith("/broadcast "):
+        if message.startswith("/broadcast"):
             recipient = BROADCAST
-            print(Fore.YELLOW + "Broadcasting message")
-            message = message[len("/broadcast "):]
-            print(message)
-            continue
+            print(Fore.YELLOW + f"\033[F"+ "Entering broadcast mode"+f"\033[K")
+            # message = message[len("/broadcast "):]
+            # print(message)
+            # continue
         elif message.startswith("/chat "):
             recipient = message[len("/chat "):]
             print(Fore.YELLOW + f"\033[F"+f"Chatting with {recipient}"+f"\033[K")
@@ -195,13 +209,16 @@ def each_client_thread(id, tcp_server_address, udp_server_address):
                 tcp_sock.close()
                 tcp_sock = None
 
-            
-        message = input(Fore.CYAN + "me -> " + recipient + ":  ")
+        if recipient != BROADCAST:    
+            message = input(Fore.CYAN + "me -> " + recipient + ":  ")
+        else:
+            message = input(Fore.MAGENTA + "[BROADCAST]" + " me:  ")
     try:
         tcp_sock.close()
     except:return
     print(Fore.YELLOW + "Exited instant messenger")
     print(Style.RESET_ALL)
+    time.sleep(0.1)
 
 
 
