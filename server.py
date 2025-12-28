@@ -147,10 +147,14 @@ def tcp_client_thread(clientsocket, address, user_dict_lock:Lock):
                         pass
 
                     if code == message_codes["MESSAGE"] and dest_user != SERVER:
-                        print("oi")
                         user_dict_lock.acquire()
                         recipients = user_dict.get(dest_user, [])
                         user_dict_lock.release()
+                        if not recipients:
+                            client_lock.acquire()
+                            clientsocket.sendall(form_message("BAD", SERVER, cid, "Recipient is offline"))
+                            client_lock.release()
+                            continue
                         for recipient in recipients:
                             recipient_lock = client_lock_dict.get(recipient, None)
                             recipient_lock.acquire()

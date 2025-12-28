@@ -26,6 +26,8 @@ global BROADCAST; BROADCAST = "$S_BROADCAST"
 global WAITING; WAITING = 0
 global GOOD; GOOD = 1
 global BAD; BAD = 2
+global recipient; recipient = SERVER
+global lts; lts = 0
 
 global status
 status = WAITING
@@ -60,22 +62,23 @@ def send_tcp(tcp_sock, message):
     # Send data
     global status
     status = WAITING
-    print(Fore.YELLOW + 'sending {!r}'.format(message.decode("utf-8")))
+    #print(Fore.YELLOW + 'sending {!r}'.format(message.decode("utf-8")))
     tcp_sock.sendall(message)
     t1 = time.time()
     while status == WAITING:
         time.sleep(0.1)
         if time.time() - t1 > 5:
-            print(Fore.RED + "Timeout waiting for response")
+            print(Fore.RED + "\033[F"+"Timeout waiting for response" + "\033[K")
             break
     lock.release()
     if status == GOOD:
         if message_codes[unpack_message(message)[0]] != "PING":
-            print(Fore.GREEN + "Message sent successfully")
+            #print(Fore.GREEN + "\033[F"+"Message sent successfully" + "\033[K")
+            pass
         return 1
     else:
         if message_codes[unpack_message(message)[0]] != "PING":
-            print(Fore.RED + "Message failed to send")
+            print(Fore.RED + "\033[F"+"Message failed to send" + "\033[K")
         return None
 
 
@@ -118,14 +121,16 @@ def client_receive_thread(tcp_sock):
             return
         if data:
             code, source_user, dest_user, message = unpack_message(data)
-            print(message_codes[code])
-            if message_codes[code] != "PING":
-                print(f"Received {message} from {source_user}")
+            if message_codes[code] != "PING" and source_user != SERVER:
+                print("")
+                print(Fore.LIGHTBLUE_EX +f"\033[F"+f"{source_user} -> me:  {message}" + f"\033[K")
+                print(Fore.CYAN + "me -> " + source_user + ":  "+ f"\033[K", end='', flush=True)
             if source_user == SERVER:
                 if code == message_codes["GOOD"]:
                     status = GOOD
                 elif code == message_codes["BAD"]:
                     status = BAD
+                    print(Fore.RED + f"[SERVER]: {message}")
         else:
             print(Fore.RED + "Connection closed by server")
             tcp_sock.close()
@@ -138,6 +143,7 @@ def each_client_thread(id, tcp_server_address, udp_server_address):
     tcp_sock = None
     udp_sock = None
     message = input(Fore.CYAN + "")
+    global recipient
     recipient = SERVER
     while message != "/kill":
         if tcp_sock is None:
@@ -189,8 +195,10 @@ def each_client_thread(id, tcp_server_address, udp_server_address):
                 tcp_sock = None
 
             
-        message = input(Fore.CYAN + "")
-    tcp_sock.close()
+        message = input(Fore.CYAN + "me -> " + recipient + ":  ")
+    try:
+        tcp_sock.close()
+    except:return
     print(Fore.YELLOW + "Exited instant messenger")
     print(Style.RESET_ALL)
 
