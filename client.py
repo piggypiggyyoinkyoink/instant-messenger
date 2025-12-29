@@ -12,20 +12,22 @@ message_codes = {
     "GROUP_LIST" : 23,
     "PING" : 3,
     "FILE" : 4,
+    "NOTFOUND" : 404,
     "BAD" : 67,
     "GOOD" : 69,
     "DISCONNECT" : 9,
-    0 : "ID",
-    1 : "MESSAGE",
-    11: "GROUP_MESSAGE",
-    21: "JOIN",
-    22: "LEAVE",
-    23: "GROUP_LIST",
-    3 : "PING",
-    4 : "FILE",
-    67: "BAD",
-    69: "GOOD",
-    9 : "DISCONNECT"
+    0  : "ID",
+    1  : "MESSAGE",
+    11 : "GROUP_MESSAGE",
+    21 : "JOIN",
+    22 : "LEAVE",
+    23 : "GROUP_LIST",
+    3  : "PING",
+    4  : "FILE",
+    404: "NOTFOUND",
+    67 : "BAD",
+    69 : "GOOD",
+    9  : "DISCONNECT"
 }
 global SERVER; SERVER = "$S_SERVER"
 global BROADCAST; BROADCAST = "$S_BROADCAST"
@@ -165,6 +167,10 @@ def client_receive_thread(id, tcp_server_address, udp_server_address):
                 elif code == message_codes["BAD"]:
                     status = BAD
                     print(Fore.RED + f"[SERVER]:  {message}\n")
+                elif code == message_codes["NOTFOUND"]:
+                    status = BAD
+                    print(Fore.RED + f"[SERVER]:  {message}")
+                    print_prompt()
                 elif code == message_codes["MESSAGE"] or code == message_codes["GROUP_MESSAGE"]:
                     # incoming message is a server broadcast (join/leave message)
                     print("")
@@ -197,7 +203,7 @@ def client_receive_thread(id, tcp_server_address, udp_server_address):
                                 # infile = tcp_sock.makefile('rb')
                                 # shutil.copyfileobj(infile, f)
 
-                        print(Fore.GREEN + f"[SERVER]:  File {file_name} received successfully")
+                        print(Fore.GREEN + f"File {file_name} received successfully")
                     except:
                         print(Fore.RED + f"[SERVER]:  Error receiving file {file_name}\n")
                         break
@@ -230,7 +236,7 @@ def each_client_thread(id, tcp_server_address, udp_server_address, tcp_sock=None
         res = send_tcp(tcp_sock, form_message("ID", str(id), SERVER, str(id)))
         if res is None:
             raise Exception(Fore.RED + "Failed to setup connection")
-        print(Fore.GREEN + f"\033[F"+"Connected. Enter /chat <username> to chat and /kill to quit."+f"\033[K")
+        print(Fore.GREEN +"\n"+ f"\033[F"+" - /chat <username> : enter chat mode with a user."+f"\033[K"+"\n - /gc <groupname> : enter group chat mode. \n - /broadcast : enter broadcast mode.\n - /join <groupname> : join/create a group. \n - /leave <groupname> : leave a group. \n - /dl <filename.ext> : download a file. \n - /kill : quit the messenger."+f"\033[K")
     except: 
         print(Fore.RED + "Failed to setup connection")
         tcp_sock.close()

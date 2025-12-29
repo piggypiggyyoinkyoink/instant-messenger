@@ -11,20 +11,22 @@ message_codes = {
     "GROUP_LIST" : 23,
     "PING" : 3,
     "FILE" : 4,
+    "NOTFOUND" : 404,
     "BAD" : 67,
     "GOOD" : 69,
     "DISCONNECT" : 9,
-    0 : "ID",
-    1 : "MESSAGE",
-    11: "GROUP_MESSAGE",
-    21: "JOIN",
-    22: "LEAVE",
-    23: "GROUP_LIST",
-    3 : "PING",
-    4 : "FILE",
-    67: "BAD",
-    69: "GOOD",
-    9 : "DISCONNECT"
+    0  : "ID",
+    1  : "MESSAGE",
+    11 : "GROUP_MESSAGE",
+    21 : "JOIN",
+    22 : "LEAVE",
+    23 : "GROUP_LIST",
+    3  : "PING",
+    4  : "FILE",
+    404: "NOTFOUND",
+    67 : "BAD",
+    69 : "GOOD",
+    9  : "DISCONNECT"
 }
 global user_dict; user_dict = {}
 #user_dict[username] = [socket1, socket2,...]
@@ -267,7 +269,7 @@ def tcp_client_thread(clientsocket:socket.socket, address, user_dict_lock:Lock, 
                         else:
                             client_lock.acquire()
                             try:
-                                clientsocket.sendall(form_message("BAD", SERVER, cid, f"File {file_name} does not exist on server"))
+                                clientsocket.sendall(form_message("NOTFOUND", SERVER, cid, f"File {file_name} does not exist on server"))
                             finally:
                                 client_lock.release()
 
