@@ -52,7 +52,6 @@ def form_message(code, source_user, dest_user, payload):
 def unpack_message(data:bytes):
     try:
         decoded = data.decode()
-        print(decoded)
         parts = decoded.split("⠀")
         code = int(parts[0])
         source_user = parts[1]
@@ -67,7 +66,6 @@ def tcp_server_thread(tcp_socket, user_dict_lock, group_dict_lock):
     while True:
         # accept connections from outside
         (clientsocket, address) = tcp_socket.accept()
-        print(address)
         try:
             thread = Thread(target=tcp_client_thread, args=(clientsocket, address, user_dict_lock, group_dict_lock))
             thread.start()
@@ -88,16 +86,13 @@ def udp_server_thread(udp_socket, lock):
         else:
             try:
                 cid = ids[addr]
-                print('connection from', cid)
-                print('received {!r}'.format(data.decode()))
-                # if data.decode()[0] == "/":
-                #     udp_socket.sendto(commands(data, cid).encode(), addr)
-                #     continue
+                print("Incoming connection from", cid)
+                print("Received {!r}".format(data.decode()))
                 if data:
-                    print('sending data back to the client')
+                    print("Sending response to", cid)
                     udp_socket.sendto(data, addr)
                 else:
-                    print('no data from', cid)
+                    print("No data from", cid)
             except:
                 print("No ID for this address, ignoring message")
                 continue
@@ -161,16 +156,14 @@ def tcp_client_thread(clientsocket:socket.socket, address, user_dict_lock:Lock, 
     client_lock = client_lock_dict[clientsocket]
     cid = None
     try:
-        print('connection from', address)
+        print("Incoming connection from", address)
         try:
             data = clientsocket.recv(9000)
         except:
             raise Exception()
         code, source_user, dest_user, message = unpack_message(data)
-        print("CODE:", code)
-        print("ID:", source_user)
         if code == message_codes["ID"] and source_user is not None:
-            print('Client ID is {}'.format(source_user))
+            print("Client username is {}".format(source_user))
             cid = source_user
             user_dict_lock.acquire()
             try:
@@ -199,7 +192,7 @@ def tcp_client_thread(clientsocket:socket.socket, address, user_dict_lock:Lock, 
                     data = clientsocket.recv(9000) #what if its over 9000?
                 except:
                     #disconnected
-                    print("disconnected")
+                    print(cid,"disconnected")
                     #broadcast leave message
                     broadcast_message(form_message("MESSAGE", SERVER, BROADCAST, f"{cid} has left"), SERVER, user_dict_lock)
                     #remove inactive socket from dictionary
@@ -221,6 +214,7 @@ def tcp_client_thread(clientsocket:socket.socket, address, user_dict_lock:Lock, 
                             finally:
                                 group_dict_lock.release()
                             #send message to group members (incl source user) signifying user has joined
+                            print(source_user,"has joined group", group_name)
                             groupcast_message(form_message("MESSAGE", SERVER, group_name, f"{source_user} has joined group {group_name}"), group_name, user_dict_lock, group_dict_lock)
                         pass
                     elif code == message_codes["LEAVE"]:
@@ -229,7 +223,7 @@ def tcp_client_thread(clientsocket:socket.socket, address, user_dict_lock:Lock, 
                         group_dict_lock.acquire()
                         try:
                             group_dict[group_name].remove(source_user)
-                            print("left group", group_name)
+                            print(source_user,"has left group", group_name)
                         except:
                             pass
                         finally:
@@ -297,7 +291,21 @@ def tcp_client_thread(clientsocket:socket.socket, address, user_dict_lock:Lock, 
                                 clientsocket.sendall(form_message("BAD", SERVER, cid, "Error retrieving file list"))
                             finally:
                                 client_lock.release()
-
+                    elif code == message_codes["DISCONNECT"]:
+                        print(cid,"disconnected")
+                        #broadcast leave message
+                        client_lock.acquire()
+                        try:
+                            clientsocket.sendall(form_message("DISCONNECT", SERVER, cid, "Disconnected successfully"))
+                        finally:
+                            client_lock.release()
+                        broadcast_message(form_message("MESSAGE", SERVER, BROADCAST, f"{cid} has left"), SERVER, user_dict_lock)
+                        #remove inactive socket from dictionary
+                        user_dict_lock.acquire()
+                        user_dict[cid].remove(clientsocket)
+                        user_dict_lock.release()
+                        clientsocket.close()
+                        return
 
                     if code == message_codes["MESSAGE"] and dest_user == BROADCAST:
                         #retransmit to all clients except source_user
@@ -331,13 +339,13 @@ def tcp_client_thread(clientsocket:socket.socket, address, user_dict_lock:Lock, 
                         continue
                     print("Received " + message + " from " + cid)
                     if data:
-                        print('sending data back to the client')
+                        print("Sending response to", cid)
                         response = form_message("GOOD", SERVER, cid, "Message sent successfully")
                         client_lock.acquire()
                         clientsocket.sendall(response)
                         client_lock.release()
                     else:
-                        print('no data from', cid)
+                        print("No data from", cid)
                         break
                 except:
                     client_lock.acquire()

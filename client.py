@@ -1,7 +1,9 @@
 import socket, time, sys, os
 from threading import Thread, Lock
+
 os.system("color") #enables colours and effects in cmd
-#console colours
+
+#console colours:
 global RED; RED = "\x1b[91m"
 global LIGHTRED; LIGHTRED = "\x1b[31m"
 global GREEN; GREEN = "\x1b[32m"
@@ -12,13 +14,15 @@ global LIGHTBLUE; LIGHTBLUE = "\x1b[34m"
 global MAGENTA; MAGENTA = "\x1b[95m"
 global CYAN; CYAN = "\x1b[96m"
 global RESET; RESET = "\x1b[0m"
-#console effects
+
+#console effects:
+global PREVLINE; PREVLINE = "\033[F"
+global CLEARRIGHT; CLEARRIGHT = "\033[K"
+#currently unused:
 global BOLD; BOLD = "\x1b[1m"
 global ENDBOLD; ENDBOLD = "\x1b[21m"
 global UNDERLINE; UNDERLINE = "\x1b[4m"
 global ENDUNDERLINE; ENDUNDERLINE = "\x1b[24m"
-global PREVLINE; PREVLINE = "\033[F"
-global CLEARRIGHT; CLEARRIGHT = "\033[K"
 
 #protocol message codes
 global message_codes
@@ -244,6 +248,11 @@ def client_receive_thread(id, tcp_server_address, udp_server_address):
                             file_name, file_size = file.split(":")
                             print(LIGHTYELLOW + f" - {file_name} ({file_size} B)")
                     print_prompt()
+                elif code == message_codes["DISCONNECT"]:
+                    print(YELLOW + "Exited instant messenger")
+                    print(RESET)
+                    time.sleep(0.1)
+                    return
                 if code == message_codes["MESSAGE"]:
                     print_prompt()
 
@@ -380,8 +389,11 @@ def each_client_thread(id, tcp_sock=None):
             print_prompt()
         message = input()
     try:
-        tcp_sock.close()
-    except:return
+        send_tcp(tcp_sock, form_message("DISCONNECT", str(id), SERVER, ""))
+    except:
+        try:
+            tcp_sock.close()
+        except:return
     return
 
 
