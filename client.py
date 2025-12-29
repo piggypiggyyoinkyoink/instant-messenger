@@ -122,20 +122,34 @@ def print_prompt():
     else:
         print(Fore.MAGENTA + "[BROADCAST]" + " me:  ", end="",flush=True)
 
-def client_receive_thread(tcp_sock):
+def client_receive_thread(id, tcp_server_address, udp_server_address):
     global status
     global groups
+    tcp_sock = None
+    tcp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    print(Fore.YELLOW + 'Connecting to {} port {}'.format(*tcp_server_address))
+    try:
+        tcp_sock.connect(tcp_server_address)
+    except:
+        print(Fore.RED +f"\033[F"+ "Failed to connect to server" +f"\033[K")
+        return
+    rec_thread = Thread(target=each_client_thread, args=(id, tcp_server_address, udp_server_address, tcp_sock))
+    rec_thread.daemon = True
+    rec_thread.start()
+        
     while True:
         try:
             data = tcp_sock.recv(5000)
         except:
-            print(Fore.RED + "Connection lost")
+            print(Fore.RED +f"\033[F"+ "Connection lost" +f"\033[K")
+            print(Fore.YELLOW + "Exited instant messenger")
+            print(Style.RESET_ALL)
             try:
                 tcp_sock.close()
                 tcp_sock = None
-            except:
+            except:pass
             
-                return
+            return
         if data:
             code, source_user, dest_user, message = unpack_message(data)
             if message_codes[code] != "PING" and source_user != SERVER:
@@ -178,51 +192,42 @@ def client_receive_thread(tcp_sock):
         else:
             print(Fore.RED + "Connection closed by server")
             tcp_sock.close()
+            print(Fore.YELLOW + "Exited instant messenger")
+            print(Style.RESET_ALL)
             return
 
-def each_client_thread(id, tcp_server_address, udp_server_address):
+def each_client_thread(id, tcp_server_address, udp_server_address, tcp_sock=None):
     global mode
     global recipient
     global groups
     TCP = 1
     UDP = 2
     #protocol = TCP
-    tcp_sock = None
-    udp_sock = None
+    #udp_sock = None
     message = "⠀"
     recipient = SERVER
     mode = "chat"
+        
+    try:
+        #send id
+        for i in range(3):
+            # try 3 times
+            res = send_tcp(tcp_sock, form_message("ID", str(id), SERVER, str(id)))
+            if res is not None:
+                break
+        if res is None:
+            raise Exception(Fore.RED + "Failed to setup connection")
+        # p_thread = Thread(target=ping_thread, args=(tcp_sock, id))
+        # p_thread.daemon = True
+        # p_thread.start()
+        print(Fore.GREEN + f"\033[F"+"Connected. Enter /chat <username> to chat and /kill to quit."+f"\033[K")
+    except: 
+        print(Fore.RED + "Failed to setup connection")
+        tcp_sock.close()
+        return
     while message != "/kill":
         if tcp_sock is None:
-            tcp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            print(Fore.YELLOW + 'Connecting to {} port {}'.format(*tcp_server_address))
-            try:
-                tcp_sock.connect(tcp_server_address)
-            except:
-                print(Fore.RED + "Failed to connect to server")
-                return
-            rec_thread = Thread(target=client_receive_thread, args=(tcp_sock,))
-            rec_thread.daemon = True
-            rec_thread.start()
-            
-            try:
-                #send id
-                for i in range(3):
-                    # try 3 times
-                    res = send_tcp(tcp_sock, form_message("ID", str(id), SERVER, str(id)))
-                    if res is not None:
-                        break
-                if res is None:
-                    raise Exception(Fore.RED + "Failed to setup connection")
-                # p_thread = Thread(target=ping_thread, args=(tcp_sock, id))
-                # p_thread.daemon = True
-                # p_thread.start()
-                print(Fore.GREEN + f"\033[F"+"Connected. Enter /chat <username> to chat and /kill to quit."+f"\033[K")
-            except: 
-                print(Fore.RED + "Failed to setup connection")
-                tcp_sock.close()
-                return
-        
+            return
         output_prompt = True
 
         if message.startswith("/broadcast"):
@@ -261,7 +266,7 @@ def each_client_thread(id, tcp_server_address, udp_server_address):
                     # updates the "me -> recipient" prompt so set output_prompt to false to avoid duplicate prompt
                     output_prompt = False
                 except:
-                    print(Fore.RED + "Connection lost")
+                    #print(Fore.RED + "Connection lost")
                     tcp_sock.close()
                     tcp_sock = None
         elif message.startswith("/leave "):
@@ -275,7 +280,7 @@ def each_client_thread(id, tcp_server_address, udp_server_address):
                 if group_name in groups:
                     groups.remove(group_name)
             except:
-                print(Fore.RED + "Connection lost")
+                #print(Fore.RED + "Connection lost")
                 tcp_sock.close()
                 tcp_sock = None
             if recipient == group_name:
@@ -294,7 +299,7 @@ def each_client_thread(id, tcp_server_address, udp_server_address):
                 elif mode == "groupchat": #TODO: verify whether a user has actually joined a group before messaging in it
                     send_tcp(tcp_sock, form_message("GROUP_MESSAGE", str(id), recipient, message))
             except:
-                print(Fore.RED + "Connection lost")
+                #print(Fore.RED + "Connection lost")
                 tcp_sock.close()
                 tcp_sock = None
         if output_prompt:
@@ -322,5 +327,5 @@ tcp_server_address = (hostname, port)
 #print(Fore.YELLOW + 'connecting to {} port {}'.format(*tcp_server_address))
 udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 udp_server_address = (hostname, port+1000)
-thread = Thread(target=each_client_thread, args=(username, tcp_server_address, udp_server_address))
+thread = Thread(target=client_receive_thread, args=(username, tcp_server_address, udp_server_address))
 thread.start()
