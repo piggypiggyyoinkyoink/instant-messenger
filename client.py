@@ -1,4 +1,4 @@
-import socket, time, sys, shutil, os
+import socket, time, sys, os
 from threading import Thread, Lock
 from colorama import Fore, Back, Style
 
@@ -103,17 +103,6 @@ def send_udp(udp_sock:socket.socket, server_address, message):
     finally:
         return
 
-#not currently in use, not sure if needed
-# def ping_thread(tcp_sock, username):
-#     while True:
-#         time.sleep(10)
-#         ping = form_message("PING", username, SERVER, "ping")
-#         try:
-#             send_tcp(tcp_sock, ping)
-#         except:
-#             #print(Fore.RED + "Connection lost")
-#             tcp_sock.close()
-#             return
 
 
 def print_prompt():
@@ -238,16 +227,9 @@ def each_client_thread(id, tcp_server_address, udp_server_address, tcp_sock=None
         
     try:
         #send id
-        for i in range(3):
-            # try 3 times
-            res = send_tcp(tcp_sock, form_message("ID", str(id), SERVER, str(id)))
-            if res is not None:
-                break
+        res = send_tcp(tcp_sock, form_message("ID", str(id), SERVER, str(id)))
         if res is None:
             raise Exception(Fore.RED + "Failed to setup connection")
-        # p_thread = Thread(target=ping_thread, args=(tcp_sock, id))
-        # p_thread.daemon = True
-        # p_thread.start()
         print(Fore.GREEN + f"\033[F"+"Connected. Enter /chat <username> to chat and /kill to quit."+f"\033[K")
     except: 
         print(Fore.RED + "Failed to setup connection")
@@ -337,7 +319,7 @@ def each_client_thread(id, tcp_server_address, udp_server_address, tcp_sock=None
             try:
                 if mode == "chat":
                     send_tcp(tcp_sock, form_message("MESSAGE", str(id), recipient, message))
-                elif mode == "groupchat": #TODO: verify whether a user has actually joined a group before messaging in it
+                elif mode == "groupchat": 
                     send_tcp(tcp_sock, form_message("GROUP_MESSAGE", str(id), recipient, message))
             except:
                 #print(Fore.RED + "Connection lost")

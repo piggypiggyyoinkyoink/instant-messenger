@@ -1,4 +1,4 @@
-import socket, sys, shutil, os
+import socket, sys, os
 from threading import Thread, Lock
 
 global message_codes
@@ -205,6 +205,7 @@ def tcp_client_thread(clientsocket:socket.socket, address, user_dict_lock:Lock, 
                 try:
                     code, source_user, dest_user, message = unpack_message(data)
                     if code == message_codes["JOIN"]:
+                        #add user to group
                         group_name = message
                         if source_user not in group_dict.get(group_name, []):
                             group_dict_lock.acquire()
@@ -214,9 +215,11 @@ def tcp_client_thread(clientsocket:socket.socket, address, user_dict_lock:Lock, 
                                 group_dict[group_name] = [source_user]
                             finally:
                                 group_dict_lock.release()
+                            #send message to group members (incl source user) signifying user has joined
                             groupcast_message(form_message("MESSAGE", SERVER, group_name, f"{source_user} has joined group {group_name}"), group_name, user_dict_lock, group_dict_lock)
                         pass
                     elif code == message_codes["LEAVE"]:
+                        #remove user from group
                         group_name = message
                         group_dict_lock.acquire()
                         try:
@@ -226,31 +229,36 @@ def tcp_client_thread(clientsocket:socket.socket, address, user_dict_lock:Lock, 
                             pass
                         finally:
                             group_dict_lock.release()
+                        #send message to group members signifying user has left
                         groupcast_message(form_message("MESSAGE", SERVER, group_name, f"{source_user} has left group {group_name}"), group_name, user_dict_lock, group_dict_lock)
                         client_lock.acquire()
                         try:
+                            #send message to source_user confirming they have left the group
                             clientsocket.sendall(form_message("MESSAGE", SERVER, cid, f"Left group {group_name}"))
                         except:pass
                         finally:
                             client_lock.release()
                         pass
                     elif code == message_codes["GROUP_MESSAGE"]:
+                        #retransmit to all active sockets corresponding to group members except source_user
                         group_name = dest_user
                         groupcast_message(form_message("MESSAGE", source_user, group_name, message), group_name, user_dict_lock, group_dict_lock)
                         pass
                     elif code == message_codes["FILE"]:
+                        #file downloading
                         file_name = message
+                        #check file exists
                         if os.path.exists(file_path:=(os.path.join(SERVER_SHARED_FILES, file_name))):
                             file_size = os.path.getsize(file_path)
                             client_lock.acquire()
                             try:
                                 with open(file_path, "rb") as f:
+                                    #send file name and size
                                     clientsocket.sendall(form_message("FILE", SERVER, cid, file_name+","+str(file_size)))
+                                    #send file contents
                                     while file_contents:= f.read(4096):
                                         clientsocket.sendall(file_contents)
-                                    # outfile = clientsocket.makefile('wb')
-                                    # shutil.copyfileobj(f, outfile)
-                                    #outfile.flush()
+                                    #send GOOD message
                                     clientsocket.sendall(form_message("GOOD", SERVER, cid, f"File {file_name} sent successfully"))
                             except:
                                 clientsocket.sendall(form_message("BAD", SERVER, cid, f"Error sending file {file_name}"))
