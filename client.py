@@ -132,6 +132,7 @@ def client_receive_thread(id, tcp_server_address, udp_server_address):
         tcp_sock.connect(tcp_server_address)
     except:
         print(Fore.RED +f"\033[F"+ "Failed to connect to server" +f"\033[K")
+        print(Style.RESET_ALL)
         return
     rec_thread = Thread(target=each_client_thread, args=(id, tcp_server_address, udp_server_address, tcp_sock))
     rec_thread.daemon = True
@@ -194,6 +195,7 @@ def client_receive_thread(id, tcp_server_address, udp_server_address):
             tcp_sock.close()
             print(Fore.YELLOW + "Exited instant messenger")
             print(Style.RESET_ALL)
+            time.sleep(0.1)
             return
 
 def each_client_thread(id, tcp_server_address, udp_server_address, tcp_sock=None):
@@ -272,17 +274,6 @@ def each_client_thread(id, tcp_server_address, udp_server_address, tcp_sock=None
         elif message.startswith("/leave "):
             #leave a group
             group_name = message[len("/leave "):]
-            try:
-                send_tcp(tcp_sock, form_message("LEAVE", str(id), SERVER, group_name))
-                # leaving a group results in a server message that gets displayed by the receive thread which automatically 
-                # updates the "me -> recipient" prompt so set output_prompt to false to avoid duplicate prompt
-                output_prompt = False
-                if group_name in groups:
-                    groups.remove(group_name)
-            except:
-                #print(Fore.RED + "Connection lost")
-                tcp_sock.close()
-                tcp_sock = None
             if recipient == group_name:
                 # if currently chatting in the group we just left, return to chat mode so can no longer message the left group
                 recipient = SERVER
@@ -291,6 +282,20 @@ def each_client_thread(id, tcp_server_address, udp_server_address, tcp_sock=None
                 print(Fore.YELLOW + f"\033[F"+ "Returning to chat mode"+f"\033[K")
                 # now write chat mode prompt
                 output_prompt = True
+            try:
+                # leaving a group results in a server message that gets displayed by the receive thread which automatically 
+                # updates the "me -> recipient" prompt so set output_prompt to false to avoid duplicate prompt
+                if group_name in groups:
+                    output_prompt = False
+                    send_tcp(tcp_sock, form_message("LEAVE", str(id), SERVER, group_name))
+                    groups.remove(group_name)
+                else:
+                    print(Fore.RED + f"\033[F"+f"Not a member of {group_name}"+f"\033[K")
+            except:
+                #print(Fore.RED + "Connection lost")
+                tcp_sock.close()
+                tcp_sock = None
+            
         
         else:
             try:
@@ -304,13 +309,11 @@ def each_client_thread(id, tcp_server_address, udp_server_address, tcp_sock=None
                 tcp_sock = None
         if output_prompt:
             print_prompt()
-        message = input(Fore.CYAN + "")
+        message = input()
     try:
         tcp_sock.close()
     except:return
-    print(Fore.YELLOW + "Exited instant messenger")
-    print(Style.RESET_ALL)
-    time.sleep(0.1)
+    return
 
 
 
