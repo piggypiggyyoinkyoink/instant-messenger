@@ -129,7 +129,7 @@ def client_receive_thread(id, tcp_server_address, udp_server_address):
         print(Fore.RED +f"\033[F"+ "Failed to connect to server" +f"\033[K")
         print(Style.RESET_ALL)
         return
-    rec_thread = Thread(target=each_client_thread, args=(id, tcp_server_address, udp_server_address, tcp_sock))
+    rec_thread = Thread(target=each_client_thread, args=(id, tcp_sock))
     rec_thread.daemon = True
     rec_thread.start()
         
@@ -204,9 +204,9 @@ def client_receive_thread(id, tcp_server_address, udp_server_address):
                                 f.write(file_contents)
                                 remaining -= len(file_contents)
 
-                        print(Fore.GREEN + f"File {file_name} received successfully")
+                        print(Fore.GREEN + f"\033[F"+f"File {file_name} downloaded successfully: ({file_size} B)"+ f"\033[K")
                     except:
-                        print(Fore.RED + f"[SERVER]:  Error receiving file {file_name}\n")
+                        print(Fore.RED + f"\033[F"+f"[SERVER]:  Error receiving file {file_name} \n"+ f"\033[K")
                         break
                     print_prompt()
                 elif code == message_codes["FILELIST"]:
@@ -231,7 +231,7 @@ def client_receive_thread(id, tcp_server_address, udp_server_address):
             time.sleep(0.1)
             return
 
-def each_client_thread(id, tcp_server_address, udp_server_address, tcp_sock=None):
+def each_client_thread(id, tcp_sock=None):
     global mode
     global recipient
     global groups
@@ -248,7 +248,7 @@ def each_client_thread(id, tcp_server_address, udp_server_address, tcp_sock=None
         res = send_tcp(tcp_sock, form_message("ID", str(id), SERVER, str(id)))
         if res is None:
             raise Exception(Fore.RED + "Failed to setup connection")
-        print(Fore.GREEN +"\n"+ f"\033[F"+" - /chat <username> : enter chat mode with a user."+f"\033[K"+"\n - /gc <groupname> : enter group chat mode. \n - /broadcast : enter broadcast mode.\n - /join <groupname> : join/create a group. \n - /leave <groupname> : leave a group. \n - /dl <filename.ext> : download a file. \n - /kill : quit the messenger."+f"\033[K")
+        print(Fore.GREEN +"\n"+ f"\033[F"+" - /chat <username> : enter chat mode with a user."+f"\033[K"+"\n - /gc <groupname> : enter group chat mode. \n - /broadcast : enter broadcast mode.\n - /join <groupname> : join/create a group. \n - /leave <groupname> : leave a group.\n - /listfiles : list all files in the SharedFiles folder. \n - /dl <filename.ext> : download a file. \n - /kill : quit the messenger."+f"\033[K")
     except: 
         print(Fore.RED + "Failed to setup connection")
         tcp_sock.close()
