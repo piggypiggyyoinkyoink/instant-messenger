@@ -1,7 +1,26 @@
 import socket, time, sys, os
 from threading import Thread, Lock
-from colorama import Fore, Back, Style
+os.system("color") #enables colours and effects in cmd
+#console colours
+global RED; RED = "\x1b[91m"
+global LIGHTRED; LIGHTRED = "\x1b[31m"
+global GREEN; GREEN = "\x1b[32m"
+global LIGHTGREEN; LIGHTGREEN = "\x1b[92m"
+global YELLOW; YELLOW = "\x1b[93m"
+global LIGHTYELLOW; LIGHTYELLOW = "\x1b[33m"
+global LIGHTBLUE; LIGHTBLUE = "\x1b[34m"
+global MAGENTA; MAGENTA = "\x1b[95m"
+global CYAN; CYAN = "\x1b[96m"
+global RESET; RESET = "\x1b[0m"
+#console effects
+global BOLD; BOLD = "\x1b[1m"
+global ENDBOLD; ENDBOLD = "\x1b[21m"
+global UNDERLINE; UNDERLINE = "\x1b[4m"
+global ENDUNDERLINE; ENDUNDERLINE = "\x1b[24m"
+global PREVLINE; PREVLINE = "\033[F"
+global CLEARRIGHT; CLEARRIGHT = "\033[K"
 
+#protocol message codes
 global message_codes
 message_codes = {
     "ID" : 0,
@@ -31,15 +50,20 @@ message_codes = {
     69 : "GOOD",
     9  : "DISCONNECT"
 }
+#global server and broadcast identifiers
 global SERVER; SERVER = "$S_SERVER"
 global BROADCAST; BROADCAST = "$S_BROADCAST"
+#global status identifiers
 global WAITING; WAITING = 0
 global GOOD; GOOD = 1
 global BAD; BAD = 2
+#global vars for current recipient, mode and status
 global recipient; recipient = SERVER
 global mode; mode = "chat"
 global status
+#global list storing joined groups
 global groups; groups = []
+
 status = WAITING
 #mesage format: code⠀source_username⠀dest_user⠀payload
 lock = Lock()
@@ -72,23 +96,23 @@ def send_tcp(tcp_sock, message):
     # Send data
     global status
     status = WAITING
-    #print(Fore.YELLOW + 'sending {!r}'.format(message.decode("utf-8")))
+    #print(YELLOW + 'sending {!r}'.format(message.decode("utf-8")))
     tcp_sock.sendall(message)
     t1 = time.time()
     while status == WAITING:
         time.sleep(0.1)
         if time.time() - t1 > 50:
-            print(Fore.RED + "\033[F"+"Timeout waiting for response" + "\033[K")
+            print(RED + PREVLINE+"Timeout waiting for response" + CLEARRIGHT)
             break
     lock.release()
     if status == GOOD:
         if message_codes[unpack_message(message)[0]] != "PING":
-            #print(Fore.GREEN + "\033[F"+"Message sent successfully" + "\033[K")
+            #print(GREEN + PREVLINE+"Message sent successfully" + CLEARRIGHT)
             pass
         return 1
     else:
         if message_codes[unpack_message(message)[0]] != "PING":
-            print(Fore.RED + "\033[F"+"Message failed to send" + "\033[K")
+            print(RED + PREVLINE+"Message failed to send" + CLEARRIGHT)
         return None
 
 
@@ -111,23 +135,23 @@ def send_udp(udp_sock:socket.socket, server_address, message):
 
 def print_prompt():
     if mode == "groupchat":
-        print(Fore.LIGHTGREEN_EX + f"[{recipient}]" + " me:  ", end="", flush=True)
+        print(LIGHTGREEN + f"[{recipient}]" + " me:  ", end="", flush=True)
     elif recipient != BROADCAST:    
-        print(Fore.CYAN + "me -> " + recipient + ":  ", end="",flush=True)
+        print(CYAN + "me -> " + recipient + ":  ", end="",flush=True)
     else:
-        print(Fore.MAGENTA + "[BROADCAST]" + " me:  ", end="",flush=True)
+        print(MAGENTA + "[BROADCAST]" + " me:  ", end="",flush=True)
 
 def client_receive_thread(id, tcp_server_address, udp_server_address):
     global status
     global groups
     tcp_sock = None
     tcp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    print(Fore.YELLOW + 'Connecting to {} port {}'.format(*tcp_server_address))
+    print(YELLOW + 'Connecting to {} port {}'.format(*tcp_server_address))
     try:
         tcp_sock.connect(tcp_server_address)
     except:
-        print(Fore.RED +f"\033[F"+ "Failed to connect to server" +f"\033[K")
-        print(Style.RESET_ALL)
+        print(RED + PREVLINE + "Failed to connect to server" + CLEARRIGHT)
+        print(RESET)
         return
     rec_thread = Thread(target=each_client_thread, args=(id, tcp_sock))
     rec_thread.daemon = True
@@ -137,9 +161,9 @@ def client_receive_thread(id, tcp_server_address, udp_server_address):
         try:
             data = tcp_sock.recv(5000)
         except:
-            print(Fore.RED +f"\033[F"+ "Connection lost" +f"\033[K")
-            print(Fore.YELLOW + "Exited instant messenger")
-            print(Style.RESET_ALL)
+            print(RED + PREVLINE + "Connection lost" + CLEARRIGHT)
+            print(YELLOW + "Exited instant messenger")
+            print(RESET)
             try:
                 tcp_sock.close()
                 tcp_sock = None
@@ -152,15 +176,15 @@ def client_receive_thread(id, tcp_server_address, udp_server_address):
                 if dest_user == BROADCAST:
                     # incoming message is a broadcast
                     print("")
-                    print(Fore.MAGENTA +f"\033[F"+ f"[BROADCAST] {source_user}:  {message}" + f"\033[K")
+                    print(MAGENTA + PREVLINE + f"[BROADCAST] {source_user}:  {message}" + CLEARRIGHT)
                 elif dest_user == username:
                     # incoming message is a unicast
                     print("")
-                    print(Fore.LIGHTBLUE_EX +f"\033[F"+f"{source_user} -> me:  {message}" + f"\033[K")
+                    print(LIGHTBLUE + PREVLINE +f"{source_user} -> me:  {message}" + CLEARRIGHT)
                 else:
                     # incoming message is a group message
                     print("")
-                    print(Fore.LIGHTGREEN_EX +f"\033[F"+f"[{dest_user}] {source_user}:  {message}" + f"\033[K")
+                    print(LIGHTGREEN + PREVLINE +f"[{dest_user}] {source_user}:  {message}" + CLEARRIGHT)
 
                 print_prompt()
             if source_user == SERVER:
@@ -168,15 +192,15 @@ def client_receive_thread(id, tcp_server_address, udp_server_address):
                     status = GOOD
                 elif code == message_codes["BAD"]:
                     status = BAD
-                    print(Fore.RED + f"[SERVER]:  {message}\n")
+                    print(RED + f"[SERVER]:  {message}\n")
                 elif code == message_codes["NOTFOUND"]:
                     status = BAD
-                    print(Fore.RED + f"[SERVER]:  {message}")
+                    print(RED + f"[SERVER]:  {message}")
                     print_prompt()
                 elif code == message_codes["MESSAGE"] or code == message_codes["GROUP_MESSAGE"]:
                     # incoming message is a server broadcast (join/leave message)
                     print("")
-                    print(Fore.LIGHTRED_EX +f"\033[F"+ f"[SERVER]:  {message}" + f"\033[K")
+                    print(LIGHTRED + PREVLINE + f"[SERVER]:  {message}" + CLEARRIGHT)
                 elif code == message_codes["GROUP_LIST"]:
                     # incoming message is a list of groups the user has joined
                     if message == "":
@@ -184,13 +208,13 @@ def client_receive_thread(id, tcp_server_address, udp_server_address):
                     else:
                         groups = message.split(",")
                     # print("")
-                    # print(Fore.LIGHTYELLOW_EX +f"\033[F"+ f"[SERVER]:  You have joined groups: {', '.join(groups) if groups else 'None'}" + f"\033[K")
+                    # print(LIGHTYELLOW + PREVLINE + f"[SERVER]:  You have joined groups: {', '.join(groups) if groups else 'None'}" + CLEARRIGHT)
                 elif code == message_codes["FILE"]:
                     # incoming message is a signal for the beginning of a file transfer
                     file_name,file_size = message.split(",")
                     file_size = int(file_size)
                     print("")
-                    print(Fore.LIGHTYELLOW_EX +f"\033[F"+ f"[SERVER]:  Downloading file: {file_name} ({file_size} B)" + f"\033[K")
+                    print(LIGHTYELLOW + PREVLINE + f"[SERVER]:  Downloading file: {file_name} ({file_size} B)" + CLEARRIGHT)
                     remaining = file_size
                     try:
                         if not os.path.exists(f"{id}"):
@@ -204,30 +228,30 @@ def client_receive_thread(id, tcp_server_address, udp_server_address):
                                 f.write(file_contents)
                                 remaining -= len(file_contents)
 
-                        print(Fore.GREEN + f"\033[F"+f"File {file_name} downloaded successfully: ({file_size} B)"+ f"\033[K")
+                        print(GREEN + PREVLINE +f"File {file_name} downloaded successfully: ({file_size} B)"+ CLEARRIGHT)
                     except:
-                        print(Fore.RED + f"\033[F"+f"[SERVER]:  Error receiving file {file_name} \n"+ f"\033[K")
+                        print(RED + PREVLINE +f"[SERVER]:  Error receiving file {file_name} \n"+ CLEARRIGHT)
                         break
                     print_prompt()
                 elif code == message_codes["FILELIST"]:
                     # incoming message is a list of files on the server
                     files = message.split(",") if message != "" else []
                     if files == []:
-                        print(Fore.RED +f"\033[F"+ f"[SERVER]:  No files available on server." + f"\033[K")
+                        print(RED + PREVLINE + f"[SERVER]:  No files available on server." + CLEARRIGHT)
                     else:
-                        print(Fore.LIGHTYELLOW_EX +f"\033[F"+ f"[SERVER]:  Files available on server:" + f"\033[K")
+                        print(LIGHTYELLOW + PREVLINE + f"[SERVER]:  Files available on server:" + CLEARRIGHT)
                         for file in files:
                             file_name, file_size = file.split(":")
-                            print(Fore.LIGHTYELLOW_EX + f" - {file_name} ({file_size} B)")
+                            print(LIGHTYELLOW + f" - {file_name} ({file_size} B)")
                     print_prompt()
                 if code == message_codes["MESSAGE"]:
                     print_prompt()
 
         else:
-            print(Fore.RED + "Connection closed by server")
+            print(RED + "Connection closed by server")
             tcp_sock.close()
-            print(Fore.YELLOW + "Exited instant messenger")
-            print(Style.RESET_ALL)
+            print(YELLOW + "Exited instant messenger")
+            print(RESET)
             time.sleep(0.1)
             return
 
@@ -247,10 +271,10 @@ def each_client_thread(id, tcp_sock=None):
         #send id
         res = send_tcp(tcp_sock, form_message("ID", str(id), SERVER, str(id)))
         if res is None:
-            raise Exception(Fore.RED + "Failed to setup connection")
-        print(Fore.GREEN +"\n"+ f"\033[F"+" - /chat <username> : enter chat mode with a user."+f"\033[K"+"\n - /gc <groupname> : enter group chat mode. \n - /broadcast : enter broadcast mode.\n - /join <groupname> : join/create a group. \n - /leave <groupname> : leave a group.\n - /listfiles : list all files in the SharedFiles folder. \n - /dl <filename.ext> : download a file. \n - /kill : quit the messenger."+f"\033[K")
+            raise Exception(RED + "Failed to setup connection")
+        print(GREEN +"\n"+ PREVLINE +" - /chat <username> : enter chat mode with a user."+ CLEARRIGHT+"\n - /gc <groupname> : enter group chat mode. \n - /broadcast : enter broadcast mode.\n - /join <groupname> : join/create a group. \n - /leave <groupname> : leave a group.\n - /listfiles : list all files in the SharedFiles folder. \n - /dl <filename.ext> : download a file. \n - /kill : quit the messenger."+ CLEARRIGHT)
     except: 
-        print(Fore.RED + "Failed to setup connection")
+        print(RED + "Failed to setup connection")
         tcp_sock.close()
         return
     while message != "/kill":
@@ -262,29 +286,29 @@ def each_client_thread(id, tcp_sock=None):
             #broadcast mode - to everyone
             mode = "chat"
             recipient = BROADCAST
-            print(Fore.YELLOW + f"\033[F"+ "Entering broadcast mode"+f"\033[K")
+            print(YELLOW + PREVLINE + "Entering broadcast mode"+ CLEARRIGHT)
         elif message.startswith("/chat "):
             #unicast chat mode (to a specific user)
             mode = "chat"
             if message[len("/chat "):] == username:
-                print(Fore.RED + f"\033[F""Cannot chat with yourself"+f"\033[K")
+                print(RED+ PREVLINE +"Cannot chat with yourself"+ CLEARRIGHT)
             else:
                 recipient = message[len("/chat "):]
-                print(Fore.YELLOW + f"\033[F"+f"Chatting with {recipient}"+f"\033[K")
+                print(YELLOW + PREVLINE +f"Chatting with {recipient}"+ CLEARRIGHT)
         elif message.startswith("/gc "):
             #group chat mode - multicast
             #only if user has joined the group
             if message[len("/gc "):] not in groups or groups == []:
-                print(Fore.RED + f"\033[F"+f"You are not a member of {message[len('/gc '):]}"+f"\033[K")
+                print(RED + PREVLINE +f"You are not a member of {message[len('/gc '):]}"+ CLEARRIGHT)
             else:
                 mode = "groupchat"
                 recipient = message[len("/gc "):]
-                print(Fore.YELLOW + f"\033[F"+f"Group chatting in {recipient}"+f"\033[K")
+                print(YELLOW + PREVLINE +f"Group chatting in {recipient}"+ CLEARRIGHT)
         elif message.startswith("/join "):
             #join a group
             group_name = message[len("/join "):]
             if group_name in groups:
-                print(Fore.RED + f"\033[F"+f"Already a member of {group_name}"+f"\033[K")
+                print(RED + PREVLINE +f"Already a member of {group_name}"+ CLEARRIGHT)
                 output_prompt = True
             else:
                 try:
@@ -294,7 +318,7 @@ def each_client_thread(id, tcp_sock=None):
                     # updates the "me -> recipient" prompt so set output_prompt to false to avoid duplicate prompt
                     output_prompt = False
                 except:
-                    #print(Fore.RED + "Connection lost")
+                    #print(RED + "Connection lost")
                     tcp_sock.close()
                     tcp_sock = None
         elif message.startswith("/leave "):
@@ -305,7 +329,7 @@ def each_client_thread(id, tcp_sock=None):
                 recipient = SERVER
                 mode = "chat"
                 # this overwrites the group chat prompt
-                print(Fore.YELLOW + f"\033[F"+ "Returning to chat mode"+f"\033[K")
+                print(YELLOW + PREVLINE + "Returning to chat mode"+ CLEARRIGHT)
                 # now write chat mode prompt
                 output_prompt = True
             try:
@@ -316,9 +340,9 @@ def each_client_thread(id, tcp_sock=None):
                     send_tcp(tcp_sock, form_message("LEAVE", str(id), SERVER, group_name))
                     groups.remove(group_name)
                 else:
-                    print(Fore.RED + f"\033[F"+f"Not a member of {group_name}"+f"\033[K")
+                    print(RED + PREVLINE +f"Not a member of {group_name}"+ CLEARRIGHT)
             except:
-                #print(Fore.RED + "Connection lost")
+                #print(RED + "Connection lost")
                 tcp_sock.close()
                 tcp_sock = None
         elif message.startswith("/dl "):
@@ -349,7 +373,7 @@ def each_client_thread(id, tcp_sock=None):
                 elif mode == "groupchat": 
                     send_tcp(tcp_sock, form_message("GROUP_MESSAGE", str(id), recipient, message))
             except:
-                #print(Fore.RED + "Connection lost")
+                #print(RED + "Connection lost")
                 tcp_sock.close()
                 tcp_sock = None
         if output_prompt:
@@ -367,12 +391,12 @@ try:
     args = sys.argv[1:]
     username, hostname, port = (args[0], args[1], int(args[2]))
 except:
-    print(Fore.RED + "Invalid command line arguments. Using default values.")
+    print(RED + "Invalid command line arguments. Using default values.")
     username, hostname, port = ("default", socket.gethostname(), 42000)
 print(username, hostname, port)
 # Connect the socket to the port where the server is listening
 tcp_server_address = (hostname, port)
-#print(Fore.YELLOW + 'connecting to {} port {}'.format(*tcp_server_address))
+#print(YELLOW + 'connecting to {} port {}'.format(*tcp_server_address))
 udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 udp_server_address = (hostname, port)
 thread = Thread(target=client_receive_thread, args=(username, tcp_server_address, udp_server_address))
