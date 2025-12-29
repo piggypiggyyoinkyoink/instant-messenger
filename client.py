@@ -1,4 +1,4 @@
-import socket, time, sys
+import socket, time, sys, shutil, os
 from threading import Thread, Lock
 from colorama import Fore, Back, Style
 
@@ -11,6 +11,7 @@ message_codes = {
     "LEAVE" : 22,
     "GROUP_LIST" : 23,
     "PING" : 3,
+    "FILE" : 4,
     "BAD" : 67,
     "GOOD" : 69,
     "DISCONNECT" : 9,
@@ -21,6 +22,7 @@ message_codes = {
     22: "LEAVE",
     23: "GROUP_LIST",
     3 : "PING",
+    4 : "FILE",
     67: "BAD",
     69: "GOOD",
     9 : "DISCONNECT"
@@ -71,7 +73,7 @@ def send_tcp(tcp_sock, message):
     t1 = time.time()
     while status == WAITING:
         time.sleep(0.1)
-        if time.time() - t1 > 5:
+        if time.time() - t1 > 50:
             print(Fore.RED + "\033[F"+"Timeout waiting for response" + "\033[K")
             break
     lock.release()
@@ -102,16 +104,16 @@ def send_udp(udp_sock:socket.socket, server_address, message):
         return
 
 #not currently in use, not sure if needed
-def ping_thread(tcp_sock, username):
-    while True:
-        time.sleep(10)
-        ping = form_message("PING", username, SERVER, "ping")
-        try:
-            send_tcp(tcp_sock, ping)
-        except:
-            #print(Fore.RED + "Connection lost")
-            tcp_sock.close()
-            return
+# def ping_thread(tcp_sock, username):
+#     while True:
+#         time.sleep(10)
+#         ping = form_message("PING", username, SERVER, "ping")
+#         try:
+#             send_tcp(tcp_sock, ping)
+#         except:
+#             #print(Fore.RED + "Connection lost")
+#             tcp_sock.close()
+#             return
 
 
 def print_prompt():
@@ -186,7 +188,31 @@ def client_receive_thread(id, tcp_server_address, udp_server_address):
                         groups = message.split(",")
                     # print("")
                     # print(Fore.LIGHTYELLOW_EX +f"\033[F"+ f"[SERVER]:  You have joined groups: {', '.join(groups) if groups else 'None'}" + f"\033[K")
-                
+                elif code == message_codes["FILE"]:
+                    file_name,file_size = message.split(",")
+                    file_size = int(file_size)
+                    print("")
+                    print(Fore.LIGHTYELLOW_EX +f"\033[F"+ f"[SERVER]:  Downloading file: {file_name} ({file_size} B)" + f"\033[K")
+                    remaining = file_size
+                    try:
+                        if not os.path.exists(f"{id}"):
+                            os.makedirs(f"{id}")
+                        file_name2 = os.path.join(f"{id}", file_name)
+                        with open(file_name2, "wb") as f:
+                            while remaining > 0:
+                                file_contents = tcp_sock.recv(min(4096, remaining))
+                                if not file_contents:
+                                    raise Exception("Connection lost during file transfer")
+                                f.write(file_contents)
+                                remaining -= len(file_contents)
+                                # infile = tcp_sock.makefile('rb')
+                                # shutil.copyfileobj(infile, f)
+
+                        print(Fore.GREEN + f"[SERVER]:  File {file_name} received successfully")
+                    except:
+                        print(Fore.RED + f"[SERVER]:  Error receiving file {file_name}\n")
+                        break
+                    print_prompt()
                 if code == message_codes["MESSAGE"]:
                     print_prompt()
 
@@ -295,6 +321,16 @@ def each_client_thread(id, tcp_server_address, udp_server_address, tcp_sock=None
                 #print(Fore.RED + "Connection lost")
                 tcp_sock.close()
                 tcp_sock = None
+        elif message.startswith("/dl "):
+            #download a file from server
+            file_name = message[len("/dl "):]
+            try:
+                send_tcp(tcp_sock, form_message("FILE", str(id), SERVER, file_name))
+                output_prompt = False
+                # receiving the file is handled by the receive thread
+            except:
+                tcp_sock.close()
+                tcp_sock = None
             
         
         else:
@@ -329,6 +365,6 @@ print(username, hostname, port)
 tcp_server_address = (hostname, port)
 #print(Fore.YELLOW + 'connecting to {} port {}'.format(*tcp_server_address))
 udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-udp_server_address = (hostname, port+1000)
+udp_server_address = (hostname, port)
 thread = Thread(target=client_receive_thread, args=(username, tcp_server_address, udp_server_address))
 thread.start()

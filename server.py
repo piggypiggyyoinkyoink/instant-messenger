@@ -1,4 +1,4 @@
-import socket, sys
+import socket, sys, shutil, os
 from threading import Thread, Lock
 
 global message_codes
@@ -10,6 +10,7 @@ message_codes = {
     "LEAVE" : 22,
     "GROUP_LIST" : 23,
     "PING" : 3,
+    "FILE" : 4,
     "BAD" : 67,
     "GOOD" : 69,
     "DISCONNECT" : 9,
@@ -20,6 +21,7 @@ message_codes = {
     22: "LEAVE",
     23: "GROUP_LIST",
     3 : "PING",
+    4 : "FILE",
     67: "BAD",
     69: "GOOD",
     9 : "DISCONNECT"
@@ -36,9 +38,7 @@ global BROADCAST; BROADCAST = "$S_BROADCAST"
 
 #mesage format: code⠀source_username⠀dest_user⠀payload
 
-# def commands(data, cid):
-#     return 
-
+SERVER_SHARED_FILES = "D:\\! CS\\Y2\\Networks and Systems\\instant-messenger\\SharedFiles"
 
 
 def form_message(code, source_user, dest_user, payload):
@@ -149,7 +149,7 @@ def groupcast_message(message, group_name, user_dict_lock:Lock, group_dict_lock:
                 recipient_lock.release()
     return
 
-def tcp_client_thread(clientsocket, address, user_dict_lock:Lock, group_dict_lock:Lock):
+def tcp_client_thread(clientsocket:socket.socket, address, user_dict_lock:Lock, group_dict_lock:Lock):
     global client_lock_dict
     global user_dict
     client_lock_dict[clientsocket] = Lock()
@@ -238,6 +238,30 @@ def tcp_client_thread(clientsocket, address, user_dict_lock:Lock, group_dict_loc
                         group_name = dest_user
                         groupcast_message(form_message("MESSAGE", source_user, group_name, message), group_name, user_dict_lock, group_dict_lock)
                         pass
+                    elif code == message_codes["FILE"]:
+                        file_name = message
+                        if os.path.exists(file_path:=(os.path.join(SERVER_SHARED_FILES, file_name))):
+                            file_size = os.path.getsize(file_path)
+                            client_lock.acquire()
+                            try:
+                                with open(file_path, "rb") as f:
+                                    clientsocket.sendall(form_message("FILE", SERVER, cid, file_name+","+str(file_size)))
+                                    while file_contents:= f.read(4096):
+                                        clientsocket.sendall(file_contents)
+                                    # outfile = clientsocket.makefile('wb')
+                                    # shutil.copyfileobj(f, outfile)
+                                    #outfile.flush()
+                                    clientsocket.sendall(form_message("GOOD", SERVER, cid, f"File {file_name} sent successfully"))
+                            except:
+                                clientsocket.sendall(form_message("BAD", SERVER, cid, f"Error sending file {file_name}"))
+                            finally:
+                                client_lock.release()
+                        else:
+                            client_lock.acquire()
+                            try:
+                                clientsocket.sendall(form_message("BAD", SERVER, cid, f"File {file_name} does not exist on server"))
+                            finally:
+                                client_lock.release()
 
 
                     if code == message_codes["MESSAGE"] and dest_user == BROADCAST:
@@ -330,7 +354,7 @@ thread_tcp = Thread(target=tcp_server_thread, args=(tcp_socket,user_dict_lock, g
 
 #create UDP socket
 udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-udp_socket.bind((socket.gethostname(), port+1000))
+udp_socket.bind((socket.gethostname(), port))
 thread_udp = Thread(target=udp_server_thread, args=(udp_socket,user_dict_lock))
 
 t = Thread(target=a, args=(thread_tcp, thread_udp))
