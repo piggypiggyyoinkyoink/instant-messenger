@@ -31,7 +31,7 @@ global WAITING; WAITING = 0
 global GOOD; GOOD = 1
 global BAD; BAD = 2
 global recipient; recipient = SERVER
-
+global mode; mode = "chat"
 global status
 status = WAITING
 #mesage format: code⠀source_username⠀dest_user⠀payload
@@ -112,6 +112,15 @@ def ping_thread(tcp_sock, username):
             tcp_sock.close()
             return
 
+
+def print_prompt():
+    if mode == "groupchat":
+        print(Fore.LIGHTGREEN_EX + f"[{recipient}]" + " me:  ", end="", flush=True)
+    elif recipient != BROADCAST:    
+        print(Fore.CYAN + "me -> " + recipient + ":  ", end="",flush=True)
+    else:
+        print(Fore.MAGENTA + "[BROADCAST]" + " me:  ", end="",flush=True)
+
 def client_receive_thread(tcp_sock):
     global status
     while True:
@@ -148,12 +157,7 @@ def client_receive_thread(tcp_sock):
                     print("")
                     print(Fore.LIGHTGREEN_EX +f"\033[F"+f"[{dest_user}] {source_user}:  {message}" + f"\033[K")
 
-                if recipient != BROADCAST:
-                    # in chat mode
-                    print(Fore.CYAN + "me -> " + recipient + ":  "+ f"\033[K", end='', flush=True)
-                else:
-                    # in broadcast mode
-                    print(Fore.MAGENTA + "[BROADCAST]" + " me:  "+ f"\033[K", end='', flush=True)
+                print_prompt()
             if source_user == SERVER:
                 if code == message_codes["GOOD"]:
                     status = GOOD
@@ -167,12 +171,7 @@ def client_receive_thread(tcp_sock):
                     
                 
                 if code == message_codes["MESSAGE"]:
-                    if recipient != BROADCAST:
-                        # in chat mode
-                        print(Fore.CYAN + "me -> " + recipient + ":  "+ f"\033[K", end='', flush=True)
-                    else:
-                        # in broadcast mode
-                        print(Fore.MAGENTA + "[BROADCAST]" + " me:  "+ f"\033[K", end='', flush=True)
+                    print_prompt()
 
         else:
             print(Fore.RED + "Connection closed by server")
@@ -180,6 +179,7 @@ def client_receive_thread(tcp_sock):
             return
 
 def each_client_thread(id, tcp_server_address, udp_server_address):
+    global mode
     TCP = 1
     UDP = 2
     #protocol = TCP
@@ -273,14 +273,8 @@ def each_client_thread(id, tcp_server_address, udp_server_address):
                 tcp_sock.close()
                 tcp_sock = None
         if output_prompt:
-            if mode == "groupchat":
-                message = input(Fore.LIGHTGREEN_EX + f"[{recipient}]" + " me:  ")
-            elif recipient != BROADCAST:    
-                message = input(Fore.CYAN + "me -> " + recipient + ":  ")
-            else:
-                message = input(Fore.MAGENTA + "[BROADCAST]" + " me:  ")
-        else:
-            message = input(Fore.CYAN + "")
+            print_prompt()
+        message = input(Fore.CYAN + "")
     try:
         tcp_sock.close()
     except:return
