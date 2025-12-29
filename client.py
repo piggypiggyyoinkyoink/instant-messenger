@@ -13,6 +13,7 @@ message_codes = {
     "PING" : 3,
     "FILE" : 4,
     "NOTFOUND" : 404,
+    "FILELIST" : 41,
     "BAD" : 67,
     "GOOD" : 69,
     "DISCONNECT" : 9,
@@ -25,6 +26,7 @@ message_codes = {
     3  : "PING",
     4  : "FILE",
     404: "NOTFOUND",
+    41 : "FILELIST",
     67 : "BAD",
     69 : "GOOD",
     9  : "DISCONNECT"
@@ -184,6 +186,7 @@ def client_receive_thread(id, tcp_server_address, udp_server_address):
                     # print("")
                     # print(Fore.LIGHTYELLOW_EX +f"\033[F"+ f"[SERVER]:  You have joined groups: {', '.join(groups) if groups else 'None'}" + f"\033[K")
                 elif code == message_codes["FILE"]:
+                    # incoming message is a signal for the beginning of a file transfer
                     file_name,file_size = message.split(",")
                     file_size = int(file_size)
                     print("")
@@ -200,13 +203,22 @@ def client_receive_thread(id, tcp_server_address, udp_server_address):
                                     raise Exception("Connection lost during file transfer")
                                 f.write(file_contents)
                                 remaining -= len(file_contents)
-                                # infile = tcp_sock.makefile('rb')
-                                # shutil.copyfileobj(infile, f)
 
                         print(Fore.GREEN + f"File {file_name} received successfully")
                     except:
                         print(Fore.RED + f"[SERVER]:  Error receiving file {file_name}\n")
                         break
+                    print_prompt()
+                elif code == message_codes["FILELIST"]:
+                    # incoming message is a list of files on the server
+                    files = message.split(",") if message != "" else []
+                    if files == []:
+                        print(Fore.RED +f"\033[F"+ f"[SERVER]:  No files available on server." + f"\033[K")
+                    else:
+                        print(Fore.LIGHTYELLOW_EX +f"\033[F"+ f"[SERVER]:  Files available on server:" + f"\033[K")
+                        for file in files:
+                            file_name, file_size = file.split(":")
+                            print(Fore.LIGHTYELLOW_EX + f" - {file_name} ({file_size} B)")
                     print_prompt()
                 if code == message_codes["MESSAGE"]:
                     print_prompt()
@@ -316,6 +328,15 @@ def each_client_thread(id, tcp_server_address, udp_server_address, tcp_sock=None
                 send_tcp(tcp_sock, form_message("FILE", str(id), SERVER, file_name))
                 output_prompt = False
                 # receiving the file is handled by the receive thread
+            except:
+                tcp_sock.close()
+                tcp_sock = None
+        elif message.startswith("/listfiles"):
+            #request list of files from server
+            try:
+                send_tcp(tcp_sock, form_message("FILELIST", str(id), SERVER, ""))
+                output_prompt = False
+                # receiving the file list is handled by the receive thread
             except:
                 tcp_sock.close()
                 tcp_sock = None

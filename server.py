@@ -12,6 +12,7 @@ message_codes = {
     "PING" : 3,
     "FILE" : 4,
     "NOTFOUND" : 404,
+    "FILELIST" : 41,
     "BAD" : 67,
     "GOOD" : 69,
     "DISCONNECT" : 9,
@@ -24,6 +25,7 @@ message_codes = {
     3  : "PING",
     4  : "FILE",
     404: "NOTFOUND",
+    41 : "FILELIST",
     67 : "BAD",
     69 : "GOOD",
     9  : "DISCONNECT"
@@ -40,7 +42,8 @@ global BROADCAST; BROADCAST = "$S_BROADCAST"
 
 #mesage format: code⠀source_username⠀dest_user⠀payload
 
-SERVER_SHARED_FILES = "D:\\! CS\\Y2\\Networks and Systems\\instant-messenger\\SharedFiles"
+#read SERVER_SHARED_FILES from environment variable or use default (./SharedFiles)
+SERVER_SHARED_FILES = os.environ.get("SERVER_SHARED_FILES", os.path.join(os.getcwd(), "SharedFiles"))
 
 
 def form_message(code, source_user, dest_user, payload):
@@ -270,6 +273,28 @@ def tcp_client_thread(clientsocket:socket.socket, address, user_dict_lock:Lock, 
                             client_lock.acquire()
                             try:
                                 clientsocket.sendall(form_message("NOTFOUND", SERVER, cid, f"File {file_name} does not exist on server"))
+                            finally:
+                                client_lock.release()
+                    elif code == message_codes["FILELIST"]:
+                        #send list of files in SERVER_SHARED_FILES
+                        try:
+                            files = os.listdir(SERVER_SHARED_FILES)
+                            for i in range(len(files)):
+                                file = files[i]
+                                file_path = os.path.join("./SharedFiles", file)
+                                file_size = os.path.getsize(file_path)
+                                files[i]+=":"+str(file_size)
+                            files_str = ",".join(files)
+                            client_lock.acquire()
+                            try:
+                                clientsocket.sendall(form_message("FILELIST", SERVER, cid, files_str))
+                                clientsocket.sendall(form_message("GOOD", SERVER, cid, "File list sent successfully"))
+                            finally:
+                                client_lock.release()
+                        except:
+                            client_lock.acquire()
+                            try:
+                                clientsocket.sendall(form_message("BAD", SERVER, cid, "Error retrieving file list"))
                             finally:
                                 client_lock.release()
 
