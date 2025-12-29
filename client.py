@@ -134,14 +134,7 @@ def client_receive_thread(tcp_sock):
                 tcp_sock.close()
                 tcp_sock = None
             except:
-            #     time.sleep(1)
-            # if tcp_sock is None:
-            #     tcp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            #     print(Fore.YELLOW + 'Connecting to {} port {}'.format(*tcp_server_address))
-            #     try:
-            #         tcp_sock.connect(tcp_server_address)
-            #     except:
-            #         print(Fore.RED + "Failed to connect to server")
+            
                 return
         if data:
             code, source_user, dest_user, message = unpack_message(data)
