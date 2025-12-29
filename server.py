@@ -8,18 +8,18 @@ message_codes = {
     "GROUP_MESSAGE":11,
     "JOIN" : 21,
     "LEAVE" : 22,
+    "GROUP_LIST" : 23,
     "PING" : 3,
-    "QUERY" : 4,
     "BAD" : 67,
     "GOOD" : 69,
     "DISCONNECT" : 9,
     0 : "ID",
     1 : "MESSAGE",
     11: "GROUP_MESSAGE",
-    21 : "JOIN",
-    22 : "LEAVE",
+    21: "JOIN",
+    22: "LEAVE",
+    23: "GROUP_LIST",
     3 : "PING",
-    4 : "QUERY",
     67: "BAD",
     69: "GOOD",
     9 : "DISCONNECT"
@@ -179,6 +179,16 @@ def tcp_client_thread(clientsocket, address, user_dict_lock:Lock, group_dict_loc
             client_lock.release()
             broadcast_message(form_message("MESSAGE", SERVER, BROADCAST, f"{cid} has joined"), SERVER, user_dict_lock)
 
+            group_dict_lock.acquire()
+            try:
+                groups = [group for group in group_dict if cid in group_dict[group]]
+                groups_str = ",".join(groups)
+            finally:
+                group_dict_lock.release()
+            print("groups_str:", groups_str)
+            client_lock.acquire()
+            clientsocket.sendall(form_message("GROUP_LIST", SERVER, cid, groups_str))
+            client_lock.release()
             while True:
                 try:
                     data = clientsocket.recv(9000) #what if its over 9000?

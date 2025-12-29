@@ -9,18 +9,18 @@ message_codes = {
     "GROUP_MESSAGE":11,
     "JOIN" : 21,
     "LEAVE" : 22,
+    "GROUP_LIST" : 23,
     "PING" : 3,
-    "QUERY" : 4,
     "BAD" : 67,
     "GOOD" : 69,
     "DISCONNECT" : 9,
     0 : "ID",
     1 : "MESSAGE",
     11: "GROUP_MESSAGE",
-    21 : "JOIN",
-    22 : "LEAVE",
+    21: "JOIN",
+    22: "LEAVE",
+    23: "GROUP_LIST",
     3 : "PING",
-    4 : "QUERY",
     67: "BAD",
     69: "GOOD",
     9 : "DISCONNECT"
@@ -33,6 +33,7 @@ global BAD; BAD = 2
 global recipient; recipient = SERVER
 global mode; mode = "chat"
 global status
+global groups; groups = []
 status = WAITING
 #mesage format: code⠀source_username⠀dest_user⠀payload
 lock = Lock()
@@ -123,6 +124,7 @@ def print_prompt():
 
 def client_receive_thread(tcp_sock):
     global status
+    global groups
     while True:
         try:
             data = tcp_sock.recv(5000)
@@ -168,7 +170,14 @@ def client_receive_thread(tcp_sock):
                     # incoming message is a server broadcast (join/leave message)
                     print("")
                     print(Fore.LIGHTRED_EX +f"\033[F"+ f"[SERVER]:  {message}" + f"\033[K")
-                    
+                elif code == message_codes["GROUP_LIST"]:
+                    # incoming message is a list of groups the user has joined
+                    if message == "":
+                        groups = []
+                    else:
+                        groups = message.split(",")
+                    # print("")
+                    # print(Fore.LIGHTYELLOW_EX +f"\033[F"+ f"[SERVER]:  You have joined groups: {', '.join(groups) if groups else 'None'}" + f"\033[K")
                 
                 if code == message_codes["MESSAGE"]:
                     print_prompt()
@@ -180,14 +189,14 @@ def client_receive_thread(tcp_sock):
 
 def each_client_thread(id, tcp_server_address, udp_server_address):
     global mode
+    global recipient
+    global groups
     TCP = 1
     UDP = 2
     #protocol = TCP
     tcp_sock = None
     udp_sock = None
-    #message = input(Fore.CYAN + "")
     message = "⠀"
-    global recipient
     recipient = SERVER
     mode = "chat"
     while message != "/kill":
@@ -224,10 +233,12 @@ def each_client_thread(id, tcp_server_address, udp_server_address):
         output_prompt = True
 
         if message.startswith("/broadcast"):
+            #broadcast mode - to everyone
             mode = "chat"
             recipient = BROADCAST
             print(Fore.YELLOW + f"\033[F"+ "Entering broadcast mode"+f"\033[K")
         elif message.startswith("/chat "):
+            #unicast chat mode (to a specific user)
             mode = "chat"
             if message[len("/chat "):] == username:
                 print(Fore.RED + f"\033[F""Cannot chat with yourself"+f"\033[K")
@@ -235,33 +246,54 @@ def each_client_thread(id, tcp_server_address, udp_server_address):
                 recipient = message[len("/chat "):]
                 print(Fore.YELLOW + f"\033[F"+f"Chatting with {recipient}"+f"\033[K")
         elif message.startswith("/gc "):
-            mode = "groupchat"
-            recipient = message[len("/gc "):]
-            print(Fore.YELLOW + f"\033[F"+f"Group chatting in {recipient}"+f"\033[K")
+            #group chat mode - multicast
+            #only if user has joined the group
+            if message[len("/gc "):] not in groups or groups == []:
+                print(Fore.RED + f"\033[F"+f"You are not a member of {message[len('/gc '):]}"+f"\033[K")
+            else:
+                mode = "groupchat"
+                recipient = message[len("/gc "):]
+                print(Fore.YELLOW + f"\033[F"+f"Group chatting in {recipient}"+f"\033[K")
         elif message.startswith("/join "):
+            #join a group
             group_name = message[len("/join "):]
-            try:
-                send_tcp(tcp_sock, form_message("JOIN", str(id), SERVER, group_name))
-                # joining a group results in a server message that gets displayed by the receive thread which automatically 
-                # updates the "me -> recipient" prompt so set output_prompt to false to avoid duplicate prompt
-                output_prompt = False
-            except:
-                print(Fore.RED + "Connection lost")
-                tcp_sock.close()
-                tcp_sock = None
+            if group_name in groups:
+                print(Fore.RED + f"\033[F"+f"Already a member of {group_name}"+f"\033[K")
+                output_prompt = True
+            else:
+                try:
+                    send_tcp(tcp_sock, form_message("JOIN", str(id), SERVER, group_name))
+                    groups.append(group_name)
+                    # joining a group results in a server message that gets displayed by the receive thread which automatically 
+                    # updates the "me -> recipient" prompt so set output_prompt to false to avoid duplicate prompt
+                    output_prompt = False
+                except:
+                    print(Fore.RED + "Connection lost")
+                    tcp_sock.close()
+                    tcp_sock = None
         elif message.startswith("/leave "):
+            #leave a group
             group_name = message[len("/leave "):]
             try:
                 send_tcp(tcp_sock, form_message("LEAVE", str(id), SERVER, group_name))
                 # leaving a group results in a server message that gets displayed by the receive thread which automatically 
                 # updates the "me -> recipient" prompt so set output_prompt to false to avoid duplicate prompt
                 output_prompt = False
+                if group_name in groups:
+                    groups.remove(group_name)
             except:
                 print(Fore.RED + "Connection lost")
                 tcp_sock.close()
                 tcp_sock = None
-        # elif message == "⠀":
-        #     output_prompt = True
+            if recipient == group_name:
+                # if currently chatting in the group we just left, return to chat mode so can no longer message the left group
+                recipient = SERVER
+                mode = "chat"
+                # this overwrites the group chat prompt
+                print(Fore.YELLOW + f"\033[F"+ "Returning to chat mode"+f"\033[K")
+                # now write chat mode prompt
+                output_prompt = True
+        
         else:
             try:
                 if mode == "chat":
