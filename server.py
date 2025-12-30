@@ -118,7 +118,7 @@ def udp_server_thread(udp_socket:socket.socket):
                             udp_socket.settimeout(5.0)
                             try:
                                 data, addr = udp_socket.recvfrom(5000)
-                            except socket.timeout:continue
+                            except socket.timeout:break
                             code, source_user, dest_user, message = unpack_message(data)
                             if code == message_codes["GOOD"]:
                                 print("good")
@@ -142,6 +142,9 @@ def udp_server_thread(udp_socket:socket.socket):
                                 packet = bytes(f"{('00000'+str(seq_num))[-5:]}", "utf-8") + packets[seq_num]
                                 udp_socket.sendto(packet, addr)
                         #udp_socket.sendto(form_message("GOOD", SERVER, cid, f"File {file_name} sent successfully"), addr)
+                    if received == False:
+                        udp_socket.sendto(form_message("BAD", SERVER, cid, f"Error sending file {file_name}"), addr)
+                        print("bad")
                 except:
                     udp_socket.sendto(form_message("BAD", SERVER, cid, f"Error sending file {file_name}"), addr)
             else:

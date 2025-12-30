@@ -154,6 +154,8 @@ def send_udp(udp_sock:socket.socket, server_address, msg):
         if code == message_codes["FILE"] and message.split(",")[0] == fname:
             file_name,file_size = message.split(",")
             file_path = os.path.join(os.getcwd(), username, file_name)
+            if not os.path.exists(f"{username}"):
+                os.makedirs(f"{username}")
             file_size = int(file_size)
             num_packets = (file_size // 4000) + (1 if file_size % 4000 != 0 else 0)
             print(PREVLINE + YELLOW+f"Downloading file: {file_name} ({file_size} B)")
