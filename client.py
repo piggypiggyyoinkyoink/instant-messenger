@@ -152,7 +152,7 @@ def send_udp(udp_sock:socket.socket, server_address, msg):
             file_size = int(file_size)
             #determine number of expected packets
             num_packets = (file_size // 4000) + (1 if file_size % 4000 != 0 else 0)
-            print(PREVLINE + YELLOW+f"Downloading file: {file_name} ({file_size} B)")
+            print(PREVLINE + YELLOW+f"Downloading file: {file_name} ({file_size} B)" + CLEARRIGHT)
             #store packets in dict
             packets = {}
             for i in range(num_packets):
@@ -346,7 +346,7 @@ def client_receive_thread(id, server_address):
                     print_prompt()
                 elif code == message_codes["DISCONNECT"]:
                     #received disconnect confirmation from server
-                    print(YELLOW + "Exited instant messenger")
+                    print(YELLOW + PREVLINE+ "Exited instant messenger"+ CLEARRIGHT)
                     print(RESET)
                     time.sleep(0.1)
                     return

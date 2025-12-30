@@ -1,6 +1,7 @@
-import socket, sys, os, time
+import socket, sys, os
 from threading import Thread, Lock
 
+#protocol message codes
 global message_codes
 message_codes = {
     "ID" : 0,
@@ -31,28 +32,34 @@ message_codes = {
     9  : "DISCONNECT"
 }
 global user_dict; user_dict = {}
-#user_dict[username] = [socket1, socket2,...]
+#format:  user_dict[username] = [socket1, socket2,...]
+
 global client_lock_dict; client_lock_dict = {}
-#client_lock_dict[addr] = Lock()
+#format:  client_lock_dict[addr] = Lock()
+
 global group_dict; group_dict = {}
-#group_dict[group_name] = [username1, username2,...]
-global SERVER
-SERVER = "$S_SERVER"
+#format:  group_dict[group_name] = [username1, username2,...]
+
+#global server and broadcast identifiers
+global SERVER; SERVER = "$S_SERVER"
 global BROADCAST; BROADCAST = "$S_BROADCAST"
 
-#mesage format: code⠀source_username⠀dest_user⠀payload
+#message format:  code⠀source_username⠀dest_user⠀payload
+
 
 #read SERVER_SHARED_FILES from environment variable or use default (./SharedFiles)
 SERVER_SHARED_FILES = os.environ.get("SERVER_SHARED_FILES", os.path.join(os.getcwd(), "SharedFiles"))
 
 
 def form_message(code, source_user, dest_user, payload):
+    #form message
     return bytes(f"{message_codes[code]}⠀{source_user}⠀{dest_user}⠀{payload}", "utf-8")
 
 def unpack_message(data:bytes):
+    #decode message
     try:
         decoded = data.decode()
-        parts = decoded.split("⠀")
+        parts = decoded.split("⠀")  #blank unicode character used as separator to prevent conflicts with normal text
         code = int(parts[0])
         source_user = parts[1]
         dest_user = parts[2]
@@ -63,10 +70,12 @@ def unpack_message(data:bytes):
 
 
 def tcp_server_thread(tcp_socket, user_dict_lock, group_dict_lock):
+    #tcp server thread
     while True:
         # accept connections from outside
         (clientsocket, address) = tcp_socket.accept()
         try:
+            #start new thread for each new client
             thread = Thread(target=tcp_client_thread, args=(clientsocket, address, user_dict_lock, group_dict_lock))
             thread.start()
         except:
@@ -76,7 +85,7 @@ def tcp_server_thread(tcp_socket, user_dict_lock, group_dict_lock):
 
 
 def udp_server_thread(udp_socket:socket.socket):
-    ids = {}
+    #udp server thread
     udp_socket.setblocking(False)
     while True:
         udp_socket.settimeout(0.5)
@@ -87,8 +96,9 @@ def udp_server_thread(udp_socket:socket.socket):
             continue
         
         code, source_user, dest_user, message = unpack_message(data)
+        cid = source_user
         print("UDP message code:", code, "from", source_user, "to", dest_user)
-        cid = ids.get(addr, None)
+        #ignore anything that isnt a file download request
         if code == message_codes["FILE"]:
             #file downloading
             file_name = message
@@ -106,10 +116,8 @@ def udp_server_thread(udp_socket:socket.socket):
                         while file_contents:= f.read(4000):
                             packets[i] = file_contents
                             packet = bytes(f"{('00000'+str(i))[-5:]}", "utf-8") + file_contents
-                            #print("sending packet",i,"for ",file_name)
                             i+=1
                             udp_socket.sendto(packet, addr)
-                            #time.sleep(0.005)
                     received = False
                     while received == False:
                         try:
@@ -122,6 +130,7 @@ def udp_server_thread(udp_socket:socket.socket):
                             if code == message_codes["GOOD"]:
                                 #file successfully downloaded by client
                                 print("good")
+                                #mark as received and break loop
                                 received = True
                                 break
                             if code == message_codes["BAD"]:
@@ -158,6 +167,8 @@ def udp_server_thread(udp_socket:socket.socket):
         
             
 def broadcast_message(message, source_user, user_dict_lock:Lock):
+    #send broadcast message to all users except source_user
+    #get all active sockets except source_user
     user_dict_lock.acquire()
     recipients = []
     try:
@@ -166,6 +177,7 @@ def broadcast_message(message, source_user, user_dict_lock:Lock):
                 recipients.extend(user_dict[user])
     finally:
         user_dict_lock.release()
+    #send message to all recipients
     if recipients:
         for recipient in recipients:
             recipient_lock = client_lock_dict.get(recipient, None)
@@ -180,9 +192,11 @@ def broadcast_message(message, source_user, user_dict_lock:Lock):
     return
 
 def groupcast_message(message, group_name, user_dict_lock:Lock, group_dict_lock:Lock):
+    #send multicast message to all members of group except source_user
     code, source_user, dest_user, payload = unpack_message(message)
     group_dict_lock.acquire()
     try:
+        #get all members of group
         members = group_dict.get(group_name, [])
     finally:
         group_dict_lock.release()
@@ -191,12 +205,15 @@ def groupcast_message(message, group_name, user_dict_lock:Lock, group_dict_lock:
     user_dict_lock.acquire()
     recipients = []
     try:
+        #get all active sockets corresponding to group members except source_user
         for member in members:
             if member != source_user:
                 recipients.extend(user_dict.get(member, []))
     finally:
         user_dict_lock.release()
+    
     if recipients:
+        #send message to all recipients
         for recipient in recipients:
             recipient_lock = client_lock_dict.get(recipient, None)
             recipient_lock.acquire()
@@ -210,6 +227,7 @@ def groupcast_message(message, group_name, user_dict_lock:Lock, group_dict_lock:
     return
 
 def tcp_client_thread(clientsocket:socket.socket, address, user_dict_lock:Lock, group_dict_lock:Lock):
+    #thread for each connected client
     global client_lock_dict
     global user_dict
     client_lock_dict[clientsocket] = Lock()
@@ -222,21 +240,27 @@ def tcp_client_thread(clientsocket:socket.socket, address, user_dict_lock:Lock, 
         except:
             raise Exception()
         code, source_user, dest_user, message = unpack_message(data)
+        #read initial identifier message cntaining username
         if code == message_codes["ID"] and source_user is not None:
             print("Client username is {}".format(source_user))
             cid = source_user
             user_dict_lock.acquire()
+            #add socket to user_dict
             try:
                 user_dict[cid].append(clientsocket)
             except:
                 user_dict[cid] = [clientsocket]
             user_dict_lock.release()
+            #send GOOD response to client
             response = form_message("GOOD", SERVER, cid, "ID accepted")
             client_lock.acquire()
             clientsocket.sendall(response)
             client_lock.release()
+
+            #broadcast join message
             broadcast_message(form_message("MESSAGE", SERVER, BROADCAST, f"{cid} has joined"), SERVER, user_dict_lock)
 
+            #send list of groups the user is a member of
             group_dict_lock.acquire()
             try:
                 groups = [group for group in group_dict if cid in group_dict[group]]
@@ -247,11 +271,13 @@ def tcp_client_thread(clientsocket:socket.socket, address, user_dict_lock:Lock, 
             client_lock.acquire()
             clientsocket.sendall(form_message("GROUP_LIST", SERVER, cid, groups_str))
             client_lock.release()
+
+            #main loop for receiving messages from client
             while True:
                 try:
                     data = clientsocket.recv(9000) #what if its over 9000?
                 except:
-                    #disconnected
+                    #Receving failed - client is disconnected
                     print(cid,"disconnected")
                     #broadcast leave message
                     broadcast_message(form_message("MESSAGE", SERVER, BROADCAST, f"{cid} has left"), SERVER, user_dict_lock)
@@ -259,9 +285,12 @@ def tcp_client_thread(clientsocket:socket.socket, address, user_dict_lock:Lock, 
                     user_dict_lock.acquire()
                     user_dict[cid].remove(clientsocket)
                     user_dict_lock.release()
+                    #exit thread
                     return
                 try:
+                    #read message
                     code, source_user, dest_user, message = unpack_message(data)
+                    #JOIN: add user to group and notify group members
                     if code == message_codes["JOIN"]:
                         #add user to group
                         group_name = message
@@ -277,6 +306,7 @@ def tcp_client_thread(clientsocket:socket.socket, address, user_dict_lock:Lock, 
                             print(source_user,"has joined group", group_name)
                             groupcast_message(form_message("MESSAGE", SERVER, group_name, f"{source_user} has joined group {group_name}"), group_name, user_dict_lock, group_dict_lock)
                         pass
+                    #LEAVE: remove user from group and notify group members
                     elif code == message_codes["LEAVE"]:
                         #remove user from group
                         group_name = message
@@ -298,11 +328,13 @@ def tcp_client_thread(clientsocket:socket.socket, address, user_dict_lock:Lock, 
                         finally:
                             client_lock.release()
                         pass
+                    #GROUP_MESSAGE: retransmit message to all group members except source_user
                     elif code == message_codes["GROUP_MESSAGE"]:
                         #retransmit to all active sockets corresponding to group members except source_user
                         group_name = dest_user
                         groupcast_message(form_message("MESSAGE", source_user, group_name, message), group_name, user_dict_lock, group_dict_lock)
                         pass
+                    #FILE: handle TCP file download request
                     elif code == message_codes["FILE"]:
                         #file downloading
                         file_name = message
@@ -329,59 +361,69 @@ def tcp_client_thread(clientsocket:socket.socket, address, user_dict_lock:Lock, 
                                 clientsocket.sendall(form_message("NOTFOUND", SERVER, cid, f"File {file_name} does not exist on server"))
                             finally:
                                 client_lock.release()
+                    #FILELIST: send list of files in SERVER_SHARED_FILES
                     elif code == message_codes["FILELIST"]:
-                        #send list of files in SERVER_SHARED_FILES
                         try:
+                            #get list of files in SERVER_SHARED_FILES
                             files = os.listdir(SERVER_SHARED_FILES)
                             for i in range(len(files)):
                                 file = files[i]
-                                file_path = os.path.join("./SharedFiles", file)
+                                #get size of each file and append to filename with colon separator
+                                file_path = os.path.join(SERVER_SHARED_FILES, file)
                                 file_size = os.path.getsize(file_path)
                                 files[i]+=":"+str(file_size)
+                            #stringify file list with comma separator ready for sending to client
                             files_str = ",".join(files)
+                            #send stringified file list to client
                             client_lock.acquire()
                             try:
                                 clientsocket.sendall(form_message("FILELIST", SERVER, cid, files_str))
+                                #send GOOD response too to update the status on client side
                                 clientsocket.sendall(form_message("GOOD", SERVER, cid, "File list sent successfully"))
                             finally:
                                 client_lock.release()
                         except:
                             client_lock.acquire()
                             try:
+                                #send BAD response if fails to update status on client side
                                 clientsocket.sendall(form_message("BAD", SERVER, cid, "Error retrieving file list"))
                             finally:
                                 client_lock.release()
+                    #DISCONNECT: handle client disconnection (on /kill)
                     elif code == message_codes["DISCONNECT"]:
                         print(cid,"disconnected")
-                        #broadcast leave message
                         client_lock.acquire()
+                        #send disconnect confirmation to client so it can exit cleanly
                         try:
                             clientsocket.sendall(form_message("DISCONNECT", SERVER, cid, "Disconnected successfully"))
                         finally:
                             client_lock.release()
+                        #broadcast leave message to all other clients
                         broadcast_message(form_message("MESSAGE", SERVER, BROADCAST, f"{cid} has left"), SERVER, user_dict_lock)
-                        #remove inactive socket from dictionary
+                        #remove disconnected socket from user_dict
                         user_dict_lock.acquire()
                         user_dict[cid].remove(clientsocket)
                         user_dict_lock.release()
                         clientsocket.close()
                         return
-
+                    #MESSAGE: broadcast: retransmit message to all other users
                     if code == message_codes["MESSAGE"] and dest_user == BROADCAST:
                         #retransmit to all clients except source_user
                         broadcast_message(data, source_user, user_dict_lock)
                         pass
-
+                    #MESSAGE: unicast: retransmit message to dest_user
                     elif code == message_codes["MESSAGE"] and dest_user != SERVER:
-                        #retransmit to all active sockets corresponding to dest_user
+                        #get all active sockets corresponding to dest_user
                         user_dict_lock.acquire()
                         recipients = user_dict.get(dest_user, [])
                         user_dict_lock.release()
                         if not recipients:
+                            #dest_user offline - send BAD response to source_user
                             client_lock.acquire()
                             clientsocket.sendall(form_message("BAD", SERVER, cid, "Recipient is offline"))
                             client_lock.release()
                             continue
+                        #send to each active socket of dest_user
                         for recipient in recipients:
                             recipient_lock = client_lock_dict.get(recipient, None)
                             recipient_lock.acquire()
@@ -396,6 +438,7 @@ def tcp_client_thread(clientsocket:socket.socket, address, user_dict_lock:Lock, 
                         pass
                     print("Received " + message + " from " + cid)
                     if data:
+                        #send GOOD message to client confirming message was sent
                         print("Sending response to", cid)
                         response = form_message("GOOD", SERVER, cid, "Message sent successfully")
                         client_lock.acquire()
@@ -405,11 +448,13 @@ def tcp_client_thread(clientsocket:socket.socket, address, user_dict_lock:Lock, 
                         print("No data from", cid)
                         break
                 except:
+                    #exception occurs -> send BAD response to client
                     client_lock.acquire()
                     clientsocket.sendall(form_message("BAD", SERVER, cid, "Error processing message"))
                     client_lock.release()
                     continue
         else:
+            #no identifier message received - invalid connection. Close socket
             print("No ID received, closing connection")
             client_lock.acquire()
             clientsocket.sendall(form_message("BAD", SERVER, source_user, "No ID received"))
@@ -428,34 +473,41 @@ def tcp_client_thread(clientsocket:socket.socket, address, user_dict_lock:Lock, 
         client_lock_dict.pop(clientsocket)
         clientsocket.close()
 
-def a(thread_tcp, thread_udp):
+def main_thread(thread_tcp, thread_udp):
+    #start TCP and UDP server threads
     thread_tcp.daemon = True
     thread_udp.daemon = True
     thread_tcp.start()
     thread_udp.start()
+    #kill server on keyboard input - prevents infinite hang
     input()
     return
 
 
+
+#program start
+#define locks
 user_dict_lock = Lock()
 group_dict_lock = Lock()
+#get port number from command line argument or use default 42000
 try:
     args = sys.argv[1:]
     port = (int(args[0]))
 except:
     print("No port number provided, using default 42000")
     port = 42000
-# create TCP socket
+# create TCP socket and server thread
 tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 tcp_socket.bind((socket.gethostbyname(socket.gethostname()), port))
 print("Server running on", socket.gethostbyname(socket.gethostname()), "port", port)
 tcp_socket.listen(5)
 thread_tcp = Thread(target=tcp_server_thread, args=(tcp_socket,user_dict_lock, group_dict_lock))
 
-#create UDP socket
+#create UDP socket and server thread
 udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 udp_socket.bind((socket.gethostname(), port))
 thread_udp = Thread(target=udp_server_thread, args=(udp_socket,))
 
-t = Thread(target=a, args=(thread_tcp, thread_udp))
+#start main thread
+t = Thread(target=main_thread, args=(thread_tcp, thread_udp))
 t.start()    
