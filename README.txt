@@ -67,7 +67,9 @@ Messages are also colour-coded to help differentiate them:
 - incoming unicast messages are blue
 - group chat messages are green
 
+
 CMD, Windows Terminal, PowerShell and the VSCode Terminal all support ANSI escape codes.
-If your terminal does not support ANSI escape codes, start the client with a fourth argument as follows:
-    python client.py <USERNAME> <IP_ADDRESS> <PORT_NUMBER> False
-(you will know if it doesn't as there will be weird characters everywhere)
+If your terminal does not support ANSI escape codes, start the client with a fourth argument "ugly" as follows:
+    python client.py <USERNAME> <IP_ADDRESS> <PORT_NUMBER> ugly
+This will run the client in "ugly" mode, with no ANSI codes for colours, effects or cursor manipulation.
+(you will know if ANSI is not supported as there will be weird characters everywhere)

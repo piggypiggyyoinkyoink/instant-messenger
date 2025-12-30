@@ -10,12 +10,16 @@ global GREEN; GREEN = "\x1b[32m"
 global LIGHTGREEN; LIGHTGREEN = "\x1b[92m"
 global YELLOW; YELLOW = "\x1b[93m"
 global LIGHTYELLOW; LIGHTYELLOW = "\x1b[33m"
+global BLUE; BLUE = "\x1b[94m"
 global LIGHTBLUE; LIGHTBLUE = "\x1b[34m"
 global MAGENTA; MAGENTA = "\x1b[95m"
 global CYAN; CYAN = "\x1b[96m"
-global RESET; RESET = "\x1b[0m"
 
 #console effects:
+global UNDERLINE; UNDERLINE = "\033[4m"
+global BOLD; BOLD = "\033[1m"
+global BLINKING; BLINKING = "\033[5m"
+global RESET; RESET = "\x1b[0m"
 global PREVLINE; PREVLINE = "\033[F"
 global CLEARRIGHT; CLEARRIGHT = "\033[K"
 
@@ -50,6 +54,7 @@ message_codes = {
     69 : "GOOD",
     9  : "DISCONNECT"
 }
+
 #global server and broadcast identifiers (consts)
 global SERVER; SERVER = "$S_SERVER"
 global BROADCAST; BROADCAST = "$S_BROADCAST"
@@ -78,9 +83,11 @@ lock = Lock()
 
 
 def form_message(code, source_user, dest_user, payload):
+    #form message according to protocol
     return bytes(f"{message_codes[code]}⠀{source_user}⠀{dest_user}⠀{payload}", "utf-8")
 
 def unpack_message(data:bytes):
+    # decode message according to protocol
     try:
         decoded = data.decode()
         parts = decoded.split("⠀")
@@ -94,7 +101,6 @@ def unpack_message(data:bytes):
 
 def send_tcp(tcp_sock, message):
     if type(message) is not bytes:
-        lock.release()
         raise Exception()
     lock.acquire()
     # Send data
@@ -182,6 +188,8 @@ def send_udp(udp_sock:socket.socket, server_address, msg):
                                 data, server = udp_sock.recvfrom(5000)
                             except socket.timeout:pass
                             if data:
+                                #separate sequence number and file data
+                                #sequence number is first 5 bytes
                                 file_contents = data[5:]
                                 sequence_number = int(data[:5].decode("utf-8"))
                                 packets[sequence_number] = file_contents
@@ -195,8 +203,6 @@ def send_udp(udp_sock:socket.socket, server_address, msg):
                         f.write(packets[i])
                 #send GOOD confirmation to server if file received successfully
                 udp_sock.sendto(form_message("GOOD", username, SERVER, f"File {file_name} downloaded successfully"), server_address)
-                
-
                 print(GREEN + PREVLINE+ f"File {file_name} downloaded successfully: ({file_size} B)"+ CLEARRIGHT)
             except:
                 print(RED + PREVLINE+ f"Error receiving file {file_name}"+ CLEARRIGHT)
@@ -221,6 +227,7 @@ def print_prompt():
     else:
         print(MAGENTA + "[BROADCAST]" + " me:  ", end="",flush=True)
 
+
 def client_receive_thread(id, server_address):
     global status
     global groups
@@ -242,7 +249,7 @@ def client_receive_thread(id, server_address):
     send_thread = Thread(target=client_send_thread, args=(id, server_address, tcp_sock, udp_sock))
     send_thread.daemon = True #send thread doesnt hang at socket.recv() when connection is lost
     send_thread.start()
-        
+    #main receive loop
     while True:
         try:
             #receive data
@@ -255,7 +262,6 @@ def client_receive_thread(id, server_address):
                 tcp_sock.close()
                 tcp_sock = None
             except:pass
-            
             return
         if data:
             #unpack the message
@@ -380,13 +386,14 @@ def client_send_thread(id, server_address, tcp_sock=None, udp_sock=None):
         if res is None:
             raise Exception(RED + "Failed to setup connection")
         #overwrite broadcast join message with Welcome message
-        print(LIGHTRED + PREVLINE + "[SERVER]: Welcome, "+ str(id) + CLEARRIGHT)
+        print(YELLOW + PREVLINE + "Welcome, "+ str(id) + CLEARRIGHT)
         #display command list
         print(GREEN +"\n"+ PREVLINE +" - /chat <username> : enter chat mode with a user."+ CLEARRIGHT+"\n - /gc <groupname> : enter group chat mode. \n - /broadcast : enter broadcast mode.\n - /join <groupname> : join/create a group. \n - /leave <groupname> : leave a group.\n - /listfiles : list all files in the SharedFiles folder. \n - /dl <filename.ext> : download a file. \n - /protocol <tcp|udp> : select file download protocol.\n - /kill : quit the messenger."+ CLEARRIGHT)
     except: 
         print(RED + "Failed to setup connection")
         tcp_sock.close()
         return
+    #main send loop
     while message != "/kill":
         if tcp_sock is None:
             return
@@ -452,7 +459,6 @@ def client_send_thread(id, server_address, tcp_sock=None, udp_sock=None):
                 else:
                     print(RED + PREVLINE +f"Not a member of {group_name}"+ CLEARRIGHT)
             except:
-                #print(RED + "Connection lost")
                 tcp_sock.close()
                 tcp_sock = None
         elif message.startswith("/dl "):
@@ -482,7 +488,7 @@ def client_send_thread(id, server_address, tcp_sock=None, udp_sock=None):
                 tcp_sock.close()
                 tcp_sock = None
         elif message.startswith("/protocol "):
-            #switch protocol
+            #switch protocol for file downloads (tcp/udp)
             proto = message[len("/protocol "):].lower()
             if proto == "tcp":
                 protocol = TCP
@@ -524,15 +530,23 @@ try:
     #read command line arguments
     args = sys.argv[1:]
     username, hostname, port = (args[0], args[1], int(args[2]))
+    #check for no colours flag
     if len(args) > 3:
-        colours = False
+        if args[3].lower() == "ugly":
+            colours = False
 except:
     print(RED + "Invalid command line arguments. Using default values.")
     username, hostname, port = ("default", socket.gethostname(), 42000)
-if colours == False:
-    RED = LIGHTRED = GREEN = LIGHTGREEN = YELLOW = LIGHTYELLOW = LIGHTBLUE = MAGENTA = CYAN = RESET = PREVLINE = CLEARRIGHT = ""
 
-print(username, hostname, port)
+if colours == False:
+    #remove ANSI codes
+    RED = LIGHTRED = GREEN = LIGHTGREEN = YELLOW = LIGHTYELLOW = BLUE = LIGHTBLUE = MAGENTA = CYAN = RESET = PREVLINE = CLEARRIGHT = BOLD = UNDERLINE = BLINKING = ""
+
+#initialisation message
+print((MAGENTA+"●" +LIGHTGREEN + BLINKING + "●" + RESET)*11+ MAGENTA+"●"+RESET)
+print(" " + BOLD + UNDERLINE+ "CLI Instant Messenger" + RESET)
+print((MAGENTA+"●" +LIGHTGREEN + BLINKING + "●" + RESET)*11+ MAGENTA+"●"+RESET)
+
 # Connect the socket to the port where the server is listening
 server_address = (hostname, port)
 thread = Thread(target=client_receive_thread, args=(username, server_address))
