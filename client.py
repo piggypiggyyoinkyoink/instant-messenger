@@ -25,6 +25,7 @@ global UNDERLINE; UNDERLINE = "\x1b[4m"
 global ENDUNDERLINE; ENDUNDERLINE = "\x1b[24m"
 
 #protocol message codes
+#message format: code⠀source_username⠀dest_user⠀payload
 global message_codes
 message_codes = {
     "ID" : 0,
@@ -37,6 +38,7 @@ message_codes = {
     "FILE" : 4,
     "NOTFOUND" : 404,
     "FILELIST" : 41,
+    "UDPRESEND" : 5,
     "BAD" : 67,
     "GOOD" : 69,
     "DISCONNECT" : 9,
@@ -50,26 +52,35 @@ message_codes = {
     4  : "FILE",
     404: "NOTFOUND",
     41 : "FILELIST",
+    5  : "UDPRESEND",
     67 : "BAD",
     69 : "GOOD",
     9  : "DISCONNECT"
 }
-#global server and broadcast identifiers
+#global server and broadcast identifiers (consts)
 global SERVER; SERVER = "$S_SERVER"
 global BROADCAST; BROADCAST = "$S_BROADCAST"
 #global status identifiers
 global WAITING; WAITING = 0
 global GOOD; GOOD = 1
 global BAD; BAD = 2
+#global protocol identifiers
+global TCP; TCP = 1
+global UDP; UDP = 2
 #global vars for current recipient, mode and status
-global recipient; recipient = SERVER
-global mode; mode = "chat"
+global recipient
+global mode
 global status
+global protocol
 #global list storing joined groups
 global groups; groups = []
 
+#initialise values for global vars
+recipient = SERVER
+mode = "chat"
 status = WAITING
-#mesage format: code⠀source_username⠀dest_user⠀payload
+protocol = UDP
+
 lock = Lock()
 
 
@@ -121,18 +132,77 @@ def send_tcp(tcp_sock, message):
 
 
 
-def send_udp(udp_sock:socket.socket, server_address, message):
+def send_udp(udp_sock:socket.socket, server_address, msg):
     try:
         # Send data
-        print('sending {!r}'.format(message))
-        udp_sock.sendto(bytes(message, 'utf-8'), server_address)
-
+        udp_sock.sendto(msg, server_address)
+        c, s, d, fname = unpack_message(msg)
+        notfound = False
         # Receive response
-        print('waiting to receive')
-        data, server = udp_sock.recvfrom(5000)
-        print('received {!r}'.format(data.decode("utf-8")))
+        while True:
+            #discard garbage packets from previous downloads
+            try:
+                data, server = udp_sock.recvfrom(5000)
+            except socket.timeout:break
+            try:
+                code, source_user, dest_user, message = unpack_message(data)
+                if code == message_codes["NOTFOUND"]:
+                    notfound = True
+                if code == message_codes["FILE"] and message.split(",")[0] == fname:
+                    break
+            except:pass
+        if code == message_codes["FILE"] and message.split(",")[0] == fname:
+            file_name,file_size = message.split(",")
+            file_path = os.path.join(os.getcwd(), username, file_name)
+            file_size = int(file_size)
+            num_packets = (file_size // 4000) + (1 if file_size % 4000 != 0 else 0)
+            print(PREVLINE + YELLOW+f"Downloading file: {file_name} ({file_size} B)")
+            remaining = file_size
+            packets = {}
+            for i in range(num_packets):
+                packets[i] = None
+            #t1 = time.time()
+            try:
+                for i in range(num_packets):
+                    try:
+                        data, server = udp_sock.recvfrom(5000)
+                    except socket.timeout:pass
+                    if data:
+                        file_contents = data[5:]
+                        sequence_number = int(data[:5].decode("utf-8"))
+                        packets[sequence_number] = file_contents
+                        # if not file_contents:
+                        #     raise Exception("Connection lost during file transfer")
+                        #f.write(file_contents)
+                        remaining -= len(file_contents)
+                with open(file_path, "wb") as f:
+                    for i in range(num_packets):
+                        while packets[i] is None:
+                            #request resend
+                            udp_sock.sendto(form_message("UDPRESEND", username, SERVER, str(i)), server_address)
+                            try:
+                                data, server = udp_sock.recvfrom(5000)
+                            except socket.timeout:pass
+                            if data:
+                                file_contents = data[5:]
+                                sequence_number = int(data[:5].decode("utf-8"))
+                                packets[sequence_number] = file_contents
+                                if sequence_number == i:
+                                    packets[i] = file_contents
+                        f.write(packets[i])
+                udp_sock.sendto(form_message("GOOD", username, SERVER, f"File {file_name} downloaded successfully"), server_address)
+                
 
+                print(GREEN + PREVLINE+ f"File {file_name} downloaded successfully: ({file_size} B)"+ CLEARRIGHT)
+            except:
+                print(RED + PREVLINE+ f"Error receiving file {file_name}"+ CLEARRIGHT)
+                return
+        elif notfound:
+            print(RED + PREVLINE+ f"File {fname} does not exist on server"+ CLEARRIGHT)
+    except:
+        print(RED + PREVLINE+ f"Error during UDP file download"+ CLEARRIGHT)
     finally:
+        print_prompt()
         return
 
 
@@ -268,8 +338,7 @@ def each_client_thread(id, tcp_sock=None):
     global mode
     global recipient
     global groups
-    TCP = 1
-    UDP = 2
+    
     #protocol = TCP
     #udp_sock = None
     message = "⠀"
@@ -358,12 +427,19 @@ def each_client_thread(id, tcp_sock=None):
             #download a file from server
             file_name = message[len("/dl "):]
             try:
-                send_tcp(tcp_sock, form_message("FILE", str(id), SERVER, file_name))
+                if protocol == TCP:
+                    send_tcp(tcp_sock, form_message("FILE", str(id), SERVER, file_name))
+                elif protocol == UDP:
+                    send_udp(udp_sock, udp_server_address, form_message("FILE", str(id), SERVER, file_name))
                 output_prompt = False
                 # receiving the file is handled by the receive thread
-            except:
-                tcp_sock.close()
-                tcp_sock = None
+            except Exception as e:
+                if protocol == TCP:
+                    tcp_sock.close()
+                    tcp_sock = None
+                else:
+                    raise e
+                
         elif message.startswith("/listfiles"):
             #request list of files from server
             try:
@@ -410,6 +486,7 @@ print(username, hostname, port)
 tcp_server_address = (hostname, port)
 #print(YELLOW + 'connecting to {} port {}'.format(*tcp_server_address))
 udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+udp_sock.settimeout(0.1)
 udp_server_address = (hostname, port)
 thread = Thread(target=client_receive_thread, args=(username, tcp_server_address, udp_server_address))
 thread.start()

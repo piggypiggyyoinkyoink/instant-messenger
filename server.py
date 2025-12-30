@@ -1,4 +1,4 @@
-import socket, sys, os
+import socket, sys, os, time
 from threading import Thread, Lock
 
 global message_codes
@@ -13,6 +13,7 @@ message_codes = {
     "FILE" : 4,
     "NOTFOUND" : 404,
     "FILELIST" : 41,
+    "UDPRESEND" : 5,
     "BAD" : 67,
     "GOOD" : 69,
     "DISCONNECT" : 9,
@@ -26,6 +27,7 @@ message_codes = {
     4  : "FILE",
     404: "NOTFOUND",
     41 : "FILELIST",
+    5  : "UDPRESEND",
     67 : "BAD",
     69 : "GOOD",
     9  : "DISCONNECT"
@@ -75,27 +77,78 @@ def tcp_server_thread(tcp_socket, user_dict_lock, group_dict_lock):
 
 
 
-def udp_server_thread(udp_socket, lock):
+def udp_server_thread(udp_socket:socket.socket):
     ids = {}
+    udp_socket.setblocking(False)
     while True:
+        udp_socket.settimeout(0.5)
         # receive data from client (data, addr)
-        data, addr = udp_socket.recvfrom(5000)
-        if data.decode().split(":")[0] == "ID" and len(data.decode().split(":")) == 2 and (cid:=(data.decode().split(":")[1])).isnumeric():
-            ids[addr] = cid
-            udp_socket.sendto(data, addr)
-        else:
-            try:
-                cid = ids[addr]
-                print("Incoming connection from", cid)
-                print("Received {!r}".format(data.decode()))
-                if data:
-                    print("Sending response to", cid)
-                    udp_socket.sendto(data, addr)
-                else:
-                    print("No data from", cid)
-            except:
-                print("No ID for this address, ignoring message")
-                continue
+        try:
+            data, addr = udp_socket.recvfrom(5000)
+        except:
+            continue
+        
+        code, source_user, dest_user, message = unpack_message(data)
+        print("UDP message code:", code, "from", source_user, "to", dest_user)
+        cid = ids.get(addr, None)
+        if code == message_codes["FILE"]:
+            #file downloading
+            file_name = message
+            #check file exists
+            if os.path.exists(file_path:=(os.path.join(SERVER_SHARED_FILES, file_name))):
+                file_size = os.path.getsize(file_path)
+                try:
+                    with open(file_path, "rb") as f:
+                        #send file name and size
+                        print("sending file name and size")
+                        udp_socket.sendto(form_message("FILE", SERVER, cid, file_name+","+str(file_size)), addr)
+                        #send file contents
+                        packets = {}
+                        i = 0
+                        while file_contents:= f.read(4000):
+                            packets[i] = file_contents
+                            packet = bytes(f"{('00000'+str(i))[-5:]}", "utf-8") + file_contents
+                            print("sending packet",i,"for ",file_name)
+                            i+=1
+                            udp_socket.sendto(packet, addr)
+                            #time.sleep(0.005)
+                    received = False
+                    while received == False:
+                        try:
+                            udp_socket.settimeout(5.0)
+                            try:
+                                data, addr = udp_socket.recvfrom(5000)
+                            except socket.timeout:continue
+                            code, source_user, dest_user, message = unpack_message(data)
+                            if code == message_codes["GOOD"]:
+                                print("good")
+                                received = True
+                                break
+                            if code == message_codes["BAD"]:
+                                print("bad")
+                                break
+                            elif code == message_codes["UDPRESEND"]:
+                                seq_num = int(message)
+                                print("resending packet",seq_num,"for",file_name)
+                                packet = bytes(f"{('00000'+str(seq_num))[-5:]}", "utf-8") + packets[seq_num]
+                                print(packet)
+                                udp_socket.sendto(packet, addr)
+                        except Exception as e:
+                            print(e)
+                            #resend all packets
+                            print("resending all packets for",file_name)
+                            for seq_num in packets:
+                                print("resending packet",seq_num,"for",file_name)
+                                packet = bytes(f"{('00000'+str(seq_num))[-5:]}", "utf-8") + packets[seq_num]
+                                udp_socket.sendto(packet, addr)
+                        #udp_socket.sendto(form_message("GOOD", SERVER, cid, f"File {file_name} sent successfully"), addr)
+                except:
+                    udp_socket.sendto(form_message("BAD", SERVER, cid, f"Error sending file {file_name}"), addr)
+            else:
+                print(f"File {file_name} does not exist on server")
+                udp_socket.sendto(form_message("NOTFOUND", SERVER, cid, f"File {file_name} does not exist on server"), addr)
+        
+        
             
 def broadcast_message(message, source_user, user_dict_lock:Lock):
     user_dict_lock.acquire()
@@ -398,7 +451,7 @@ thread_tcp = Thread(target=tcp_server_thread, args=(tcp_socket,user_dict_lock, g
 #create UDP socket
 udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 udp_socket.bind((socket.gethostname(), port))
-thread_udp = Thread(target=udp_server_thread, args=(udp_socket,user_dict_lock))
+thread_udp = Thread(target=udp_server_thread, args=(udp_socket,))
 
 t = Thread(target=a, args=(thread_tcp, thread_udp))
 t.start()    
