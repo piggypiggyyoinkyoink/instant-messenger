@@ -1,5 +1,6 @@
 import socket, sys, os
 from threading import Thread, Lock
+from dotenv import load_dotenv
 
 #protocol message codes
 global message_codes
@@ -48,6 +49,7 @@ global BROADCAST; BROADCAST = "$S_BROADCAST"
 
 
 #read SERVER_SHARED_FILES from environment variable or use default (./SharedFiles)
+load_dotenv()
 SERVER_SHARED_FILES = os.environ.get("SERVER_SHARED_FILES", os.path.join(os.getcwd(), "SharedFiles"))
 
 
