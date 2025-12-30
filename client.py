@@ -19,10 +19,10 @@ global RESET; RESET = "\x1b[0m"
 global PREVLINE; PREVLINE = "\033[F"
 global CLEARRIGHT; CLEARRIGHT = "\033[K"
 #currently unused:
-global BOLD; BOLD = "\x1b[1m"
-global ENDBOLD; ENDBOLD = "\x1b[21m"
-global UNDERLINE; UNDERLINE = "\x1b[4m"
-global ENDUNDERLINE; ENDUNDERLINE = "\x1b[24m"
+# global BOLD; BOLD = "\x1b[1m"
+# global ENDBOLD; ENDBOLD = "\x1b[21m"
+# global UNDERLINE; UNDERLINE = "\x1b[4m"
+# global ENDUNDERLINE; ENDUNDERLINE = "\x1b[24m"
 
 #protocol message codes
 #message format: code⠀source_username⠀dest_user⠀payload
@@ -34,7 +34,6 @@ message_codes = {
     "JOIN" : 21,
     "LEAVE" : 22,
     "GROUP_LIST" : 23,
-    "PING" : 3,
     "FILE" : 4,
     "NOTFOUND" : 404,
     "FILELIST" : 41,
@@ -48,7 +47,6 @@ message_codes = {
     21 : "JOIN",
     22 : "LEAVE",
     23 : "GROUP_LIST",
-    3  : "PING",
     4  : "FILE",
     404: "NOTFOUND",
     41 : "FILELIST",
@@ -79,7 +77,7 @@ global groups; groups = []
 recipient = SERVER
 mode = "chat"
 status = WAITING
-protocol = UDP
+protocol = TCP
 
 lock = Lock()
 
@@ -104,16 +102,12 @@ def send_tcp(tcp_sock, message):
         lock.release()
         raise Exception()
     lock.acquire()
-    if message_codes[unpack_message(message)[0]] == "PING":
-        tcp_sock.sendall(message)
-        lock.release()
-        return
     # Send data
     global status
     status = WAITING
-    #print(YELLOW + 'sending {!r}'.format(message.decode("utf-8")))
     tcp_sock.sendall(message)
     t1 = time.time()
+    #wait for status to be updated by receive thread
     while status == WAITING:
         time.sleep(0.1)
         if time.time() - t1 > 50:
@@ -121,20 +115,17 @@ def send_tcp(tcp_sock, message):
             break
     lock.release()
     if status == GOOD:
-        if message_codes[unpack_message(message)[0]] != "PING":
-            #print(GREEN + PREVLINE+"Message sent successfully" + CLEARRIGHT)
-            pass
         return 1
     else:
-        if message_codes[unpack_message(message)[0]] != "PING":
-            print(RED + PREVLINE+"Message failed to send" + CLEARRIGHT)
+        print(RED + PREVLINE+"Message failed to send" + CLEARRIGHT)
         return None
 
 
 
 def send_udp(udp_sock:socket.socket, server_address, msg):
+    # UDP file download
     try:
-        # Send data
+        # Send file request
         udp_sock.sendto(msg, server_address)
         c, s, d, fname = unpack_message(msg)
         notfound = False
@@ -147,40 +138,47 @@ def send_udp(udp_sock:socket.socket, server_address, msg):
             try:
                 code, source_user, dest_user, message = unpack_message(data)
                 if code == message_codes["NOTFOUND"]:
+                    #do not break here as this may be an old NOTFOUND response
                     notfound = True
                 if code == message_codes["FILE"] and message.split(",")[0] == fname:
                     break
             except:pass
         if code == message_codes["FILE"] and message.split(",")[0] == fname:
+            #if correct file response received, proceed with download
             file_name,file_size = message.split(",")
             file_path = os.path.join(os.getcwd(), username, file_name)
             if not os.path.exists(f"{username}"):
                 os.makedirs(f"{username}")
             file_size = int(file_size)
+            #determine number of expected packets
             num_packets = (file_size // 4000) + (1 if file_size % 4000 != 0 else 0)
             print(PREVLINE + YELLOW+f"Downloading file: {file_name} ({file_size} B)")
-            remaining = file_size
+            #store packets in dict
             packets = {}
             for i in range(num_packets):
                 packets[i] = None
-            #t1 = time.time()
             try:
                 for i in range(num_packets):
+                    #receive packets
+                    data=None
                     try:
                         data, server = udp_sock.recvfrom(5000)
                     except socket.timeout:pass
                     if data:
+                        #first 5 bytes are sequence number
                         file_contents = data[5:]
                         sequence_number = int(data[:5].decode("utf-8"))
+                        #add to dict
                         packets[sequence_number] = file_contents
-                        # if not file_contents:
-                        #     raise Exception("Connection lost during file transfer")
-                        #f.write(file_contents)
-                        remaining -= len(file_contents)
                 with open(file_path, "wb") as f:
+                    #assemble file in order, requesting resends as necessary
                     for i in range(num_packets):
+                        t1 = time.time()
                         while packets[i] is None:
-                            #request resend
+                            if time.time() - t1 > 20:
+                                #connection lost - break loop
+                                break
+                            #packet missing -> request resend
                             udp_sock.sendto(form_message("UDPRESEND", username, SERVER, str(i)), server_address)
                             try:
                                 data, server = udp_sock.recvfrom(5000)
@@ -189,9 +187,15 @@ def send_udp(udp_sock:socket.socket, server_address, msg):
                                 file_contents = data[5:]
                                 sequence_number = int(data[:5].decode("utf-8"))
                                 packets[sequence_number] = file_contents
+                                #check correct packet received
                                 if sequence_number == i:
                                     packets[i] = file_contents
+                        #write packet to file
+                        if packets[i] is None:
+                            #connection lost - raise exception
+                            raise Exception("Failed to receive all packets")
                         f.write(packets[i])
+                #send GOOD confirmation to server if file received successfully
                 udp_sock.sendto(form_message("GOOD", username, SERVER, f"File {file_name} downloaded successfully"), server_address)
                 
 
@@ -200,6 +204,7 @@ def send_udp(udp_sock:socket.socket, server_address, msg):
                 print(RED + PREVLINE+ f"Error receiving file {file_name}"+ CLEARRIGHT)
                 return
         elif notfound:
+            #if socket times out and a NOTFOUND message was received, then file does not exist
             print(RED + PREVLINE+ f"File {fname} does not exist on server"+ CLEARRIGHT)
     except:
         print(RED + PREVLINE+ f"Error during UDP file download"+ CLEARRIGHT)
@@ -210,6 +215,7 @@ def send_udp(udp_sock:socket.socket, server_address, msg):
 
 
 def print_prompt():
+    #print [GROUPNAME] me:  or me -> USERNAME:  or [BROADCAST] me:  prompt depending on chat mode
     if mode == "groupchat":
         print(LIGHTGREEN + f"[{recipient}]" + " me:  ", end="", flush=True)
     elif recipient != BROADCAST:    
@@ -217,24 +223,31 @@ def print_prompt():
     else:
         print(MAGENTA + "[BROADCAST]" + " me:  ", end="",flush=True)
 
-def client_receive_thread(id, tcp_server_address, udp_server_address):
+def client_receive_thread(id, server_address):
     global status
     global groups
     tcp_sock = None
+    #initialise TCP and UDP sockets
     tcp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    print(YELLOW + 'Connecting to {} port {}'.format(*tcp_server_address))
+    udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    udp_sock.settimeout(0.1)
+    hostname, port = server_address
+    print(YELLOW + f"Connecting to {hostname} port {port}")
     try:
-        tcp_sock.connect(tcp_server_address)
+        #connect to server
+        tcp_sock.connect(server_address)
     except:
         print(RED + PREVLINE + "Failed to connect to server" + CLEARRIGHT)
         print(RESET)
         return
-    rec_thread = Thread(target=each_client_thread, args=(id, tcp_sock))
-    rec_thread.daemon = True
-    rec_thread.start()
+    #start send thread
+    send_thread = Thread(target=client_send_thread, args=(id, server_address, tcp_sock, udp_sock))
+    send_thread.daemon = True #send thread doesnt hang at socket.recv() when connection is lost
+    send_thread.start()
         
     while True:
         try:
+            #receive data
             data = tcp_sock.recv(5000)
         except:
             print(RED + PREVLINE + "Connection lost" + CLEARRIGHT)
@@ -247,8 +260,10 @@ def client_receive_thread(id, tcp_server_address, udp_server_address):
             
             return
         if data:
+            #unpack the message
             code, source_user, dest_user, message = unpack_message(data)
-            if message_codes[code] != "PING" and source_user != SERVER:
+            #handle messages from other users
+            if source_user != SERVER:
                 if dest_user == BROADCAST:
                     # incoming message is a broadcast
                     print("")
@@ -263,13 +278,18 @@ def client_receive_thread(id, tcp_server_address, udp_server_address):
                     print(LIGHTGREEN + PREVLINE +f"[{dest_user}] {source_user}:  {message}" + CLEARRIGHT)
 
                 print_prompt()
+            #handle server messages
             if source_user == SERVER:
+                #update status based on server response
                 if code == message_codes["GOOD"]:
+                    #good response from server
                     status = GOOD
                 elif code == message_codes["BAD"]:
+                    #bad response from server
                     status = BAD
                     print(RED + f"[SERVER]:  {message}\n")
                 elif code == message_codes["NOTFOUND"]:
+                    #file not found
                     status = BAD
                     print(RED + f"[SERVER]:  {message}")
                     print_prompt()
@@ -283,19 +303,18 @@ def client_receive_thread(id, tcp_server_address, udp_server_address):
                         groups = []
                     else:
                         groups = message.split(",")
-                    # print("")
-                    # print(LIGHTYELLOW + PREVLINE + f"[SERVER]:  You have joined groups: {', '.join(groups) if groups else 'None'}" + CLEARRIGHT)
                 elif code == message_codes["FILE"]:
-                    # incoming message is a signal for the beginning of a file transfer
+                    # incoming message is a signal for the beginning of a TCP file download
                     file_name,file_size = message.split(",")
                     file_size = int(file_size)
-                    print("")
                     print(LIGHTYELLOW + PREVLINE + f"[SERVER]:  Downloading file: {file_name} ({file_size} B)" + CLEARRIGHT)
                     remaining = file_size
                     try:
+                        #make client directory if doesnt exist
                         if not os.path.exists(f"{id}"):
                             os.makedirs(f"{id}")
                         file_name2 = os.path.join(f"{id}", file_name)
+                        #write to file
                         with open(file_name2, "wb") as f:
                             while remaining > 0:
                                 file_contents = tcp_sock.recv(min(4096, remaining))
@@ -311,16 +330,22 @@ def client_receive_thread(id, tcp_server_address, udp_server_address):
                     print_prompt()
                 elif code == message_codes["FILELIST"]:
                     # incoming message is a list of files on the server
-                    files = message.split(",") if message != "" else []
+                    #format = filename1:size1,filename2:size2,...
+                    if message != "":
+                        files = message.split(",") 
+                    else:
+                        files = []
                     if files == []:
                         print(RED + PREVLINE + f"[SERVER]:  No files available on server." + CLEARRIGHT)
                     else:
                         print(LIGHTYELLOW + PREVLINE + f"[SERVER]:  Files available on server:" + CLEARRIGHT)
+                        #display name and size for each file
                         for file in files:
                             file_name, file_size = file.split(":")
                             print(LIGHTYELLOW + f" - {file_name} ({file_size} B)")
                     print_prompt()
                 elif code == message_codes["DISCONNECT"]:
+                    #received disconnect confirmation from server
                     print(YELLOW + "Exited instant messenger")
                     print(RESET)
                     time.sleep(0.1)
@@ -336,23 +361,21 @@ def client_receive_thread(id, tcp_server_address, udp_server_address):
             time.sleep(0.1)
             return
 
-def each_client_thread(id, tcp_sock=None):
+def client_send_thread(id, server_address, tcp_sock=None, udp_sock=None):
     global mode
     global recipient
     global groups
     
-    #protocol = TCP
-    #udp_sock = None
     message = "⠀"
     recipient = SERVER
     mode = "chat"
         
     try:
-        #send id
+        #send username to server
         res = send_tcp(tcp_sock, form_message("ID", str(id), SERVER, str(id)))
         if res is None:
             raise Exception(RED + "Failed to setup connection")
-        print(GREEN +"\n"+ PREVLINE +" - /chat <username> : enter chat mode with a user."+ CLEARRIGHT+"\n - /gc <groupname> : enter group chat mode. \n - /broadcast : enter broadcast mode.\n - /join <groupname> : join/create a group. \n - /leave <groupname> : leave a group.\n - /listfiles : list all files in the SharedFiles folder. \n - /dl <filename.ext> : download a file. \n - /kill : quit the messenger."+ CLEARRIGHT)
+        print(GREEN +"\n"+ PREVLINE +" - /chat <username> : enter chat mode with a user."+ CLEARRIGHT+"\n - /gc <groupname> : enter group chat mode. \n - /broadcast : enter broadcast mode.\n - /join <groupname> : join/create a group. \n - /leave <groupname> : leave a group.\n - /listfiles : list all files in the SharedFiles folder. \n - /dl <filename.ext> : download a file. \n - /protocol <tcp|udp> : select file download protocol.\n - /kill : quit the messenger."+ CLEARRIGHT)
     except: 
         print(RED + "Failed to setup connection")
         tcp_sock.close()
@@ -432,7 +455,7 @@ def each_client_thread(id, tcp_sock=None):
                 if protocol == TCP:
                     send_tcp(tcp_sock, form_message("FILE", str(id), SERVER, file_name))
                 elif protocol == UDP:
-                    send_udp(udp_sock, udp_server_address, form_message("FILE", str(id), SERVER, file_name))
+                    send_udp(udp_sock, server_address, form_message("FILE", str(id), SERVER, file_name))
                 output_prompt = False
                 # receiving the file is handled by the receive thread
             except Exception as e:
@@ -451,22 +474,35 @@ def each_client_thread(id, tcp_sock=None):
             except:
                 tcp_sock.close()
                 tcp_sock = None
+        elif message.startswith("/protocol "):
+            #switch protocol
+            proto = message[len("/protocol "):].lower()
+            if proto == "tcp":
+                protocol = TCP
+                print(YELLOW + PREVLINE + "Switched to TCP protocol for file downloads"+ CLEARRIGHT)
+            elif proto == "udp":
+                protocol = UDP
+                print(YELLOW + PREVLINE + "Switched to UDP protocol for file downloads"+ CLEARRIGHT)
+            else:
+                print(RED + PREVLINE + "Invalid protocol. Use /protocol tcp or /protocol udp"+ CLEARRIGHT)
             
         
         else:
             try:
                 if mode == "chat":
+                    #send unicast message
                     send_tcp(tcp_sock, form_message("MESSAGE", str(id), recipient, message))
                 elif mode == "groupchat": 
+                    #send group message
                     send_tcp(tcp_sock, form_message("GROUP_MESSAGE", str(id), recipient, message))
             except:
-                #print(RED + "Connection lost")
                 tcp_sock.close()
                 tcp_sock = None
         if output_prompt:
             print_prompt()
         message = input()
     try:
+        #send disconnect message to server on /kill
         send_tcp(tcp_sock, form_message("DISCONNECT", str(id), SERVER, ""))
     except:
         try:
@@ -475,9 +511,9 @@ def each_client_thread(id, tcp_sock=None):
     return
 
 
-
-# Create a TCP/IP socket
+#Program start
 try:
+    #read command line arguments
     args = sys.argv[1:]
     username, hostname, port = (args[0], args[1], int(args[2]))
 except:
@@ -485,10 +521,6 @@ except:
     username, hostname, port = ("default", socket.gethostname(), 42000)
 print(username, hostname, port)
 # Connect the socket to the port where the server is listening
-tcp_server_address = (hostname, port)
-#print(YELLOW + 'connecting to {} port {}'.format(*tcp_server_address))
-udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-udp_sock.settimeout(0.1)
-udp_server_address = (hostname, port)
-thread = Thread(target=client_receive_thread, args=(username, tcp_server_address, udp_server_address))
+server_address = (hostname, port)
+thread = Thread(target=client_receive_thread, args=(username, server_address))
 thread.start()

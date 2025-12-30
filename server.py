@@ -9,7 +9,6 @@ message_codes = {
     "JOIN" : 21,
     "LEAVE" : 22,
     "GROUP_LIST" : 23,
-    "PING" : 3,
     "FILE" : 4,
     "NOTFOUND" : 404,
     "FILELIST" : 41,
@@ -23,7 +22,6 @@ message_codes = {
     21 : "JOIN",
     22 : "LEAVE",
     23 : "GROUP_LIST",
-    3  : "PING",
     4  : "FILE",
     404: "NOTFOUND",
     41 : "FILELIST",
@@ -108,7 +106,7 @@ def udp_server_thread(udp_socket:socket.socket):
                         while file_contents:= f.read(4000):
                             packets[i] = file_contents
                             packet = bytes(f"{('00000'+str(i))[-5:]}", "utf-8") + file_contents
-                            print("sending packet",i,"for ",file_name)
+                            #print("sending packet",i,"for ",file_name)
                             i+=1
                             udp_socket.sendto(packet, addr)
                             #time.sleep(0.005)
@@ -117,21 +115,24 @@ def udp_server_thread(udp_socket:socket.socket):
                         try:
                             udp_socket.settimeout(5.0)
                             try:
+                                #intercept response (GOOD, BAD, UDPRESEND)
                                 data, addr = udp_socket.recvfrom(5000)
                             except socket.timeout:break
                             code, source_user, dest_user, message = unpack_message(data)
                             if code == message_codes["GOOD"]:
+                                #file successfully downloaded by client
                                 print("good")
                                 received = True
                                 break
                             if code == message_codes["BAD"]:
+                                #file download failed
                                 print("bad")
                                 break
                             elif code == message_codes["UDPRESEND"]:
+                                #resend requested packet
                                 seq_num = int(message)
                                 print("resending packet",seq_num,"for",file_name)
                                 packet = bytes(f"{('00000'+str(seq_num))[-5:]}", "utf-8") + packets[seq_num]
-                                print(packet)
                                 udp_socket.sendto(packet, addr)
                         except Exception as e:
                             print(e)
@@ -143,10 +144,13 @@ def udp_server_thread(udp_socket:socket.socket):
                                 udp_socket.sendto(packet, addr)
                         #udp_socket.sendto(form_message("GOOD", SERVER, cid, f"File {file_name} sent successfully"), addr)
                     if received == False:
-                        udp_socket.sendto(form_message("BAD", SERVER, cid, f"Error sending file {file_name}"), addr)
+                        #if timeout, something is wrong 
+                        #do not send response as client is not listening - could affect future requests
+                        #udp_socket.sendto(form_message("BAD", SERVER, cid, f"Error sending file {file_name}"), addr)
                         print("bad")
                 except:
-                    udp_socket.sendto(form_message("BAD", SERVER, cid, f"Error sending file {file_name}"), addr)
+                    print("bad")
+                    #udp_socket.sendto(form_message("BAD", SERVER, cid, f"Error sending file {file_name}"), addr)
             else:
                 print(f"File {file_name} does not exist on server")
                 udp_socket.sendto(form_message("NOTFOUND", SERVER, cid, f"File {file_name} does not exist on server"), addr)
@@ -390,9 +394,6 @@ def tcp_client_thread(clientsocket:socket.socket, address, user_dict_lock:Lock, 
                             finally:
                                 recipient_lock.release()
                         pass
-                    if code == message_codes["PING"]:
-                        print("pong")
-                        continue
                     print("Received " + message + " from " + cid)
                     if data:
                         print("Sending response to", cid)
