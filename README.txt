@@ -3,19 +3,21 @@ Python CLI Instant Messenger
 Initialisation:
 
 Start server: python server.py <PORT_NUMBER>
-Start client: python client.py <USERNAME> <IP_ADDRESS> <PORT_NUMBER>
 Note: if no port number specified, the default is 42000.
+
+Start client: python client.py <USERNAME> <IP_ADDRESS> <PORT_NUMBER>
+Note: default values are "default" "
 
 
 Instant Messenger commands:
 
 /chat <username> :
 Enter chat mode with a user. Subsequent messages are unicasted to user <username>.
-Note: <username> has to be online for messages to be received.
+Note: <username> has to be online for messages to be received, otherwise attempts to send messages will display a "recipient is offline" message.
 
 /gc <groupname> : 
 Enter group chat mode with group <groupname>. Subsequent messages are multicasted to all users in group <groupname>.
-Note: If you are not a member of <groupname>, the chat mode will not be changed and a suitable message is displayed.
+If you are not a member of <groupname>, the chat mode will not be changed and a suitable message is displayed.
 
 /broadcast :
 Enter broadcast mode. Subsequent messages are broadcasted to all online users.
@@ -25,7 +27,8 @@ Join a group with name <groupname>. If the group does not exist, it will be crea
 
 /leave <groupname> : 
 Leave group <groupname>. If you are not a member of the group a suitable message is displayed.
-Note: if this command is entered while in the group chat for this group, your chat mode is reset.
+If this command is entered while in the group chat for this group, your chat mode is reset (so you can no longer message the group you just left).
+If you are not a member of <groupname>, a suitable message is displayed.
 
 /listfiles : 
 List all files (and their size in bytes) in the folder located at the directory in the SERVER_SHARED_FILES environment variable. This environment variable can be read from the Windows User Environment Variables or from a .env file in the same directory as server.py.

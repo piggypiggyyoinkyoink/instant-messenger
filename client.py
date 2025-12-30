@@ -124,6 +124,8 @@ def send_udp(udp_sock:socket.socket, server_address, msg):
         udp_sock.sendto(msg, server_address)
         c, s, d, fname = unpack_message(msg)
         notfound = False
+        #increase timeout in case server busy
+        udp_sock.settimeout(20)
         # Receive response
         while True:
             #discard garbage packets from previous downloads
@@ -138,6 +140,7 @@ def send_udp(udp_sock:socket.socket, server_address, msg):
                 if code == message_codes["FILE"] and message.split(",")[0] == fname:
                     break
             except:pass
+        udp_sock.settimeout(0.1)
         if code == message_codes["FILE"] and message.split(",")[0] == fname:
             #if correct file response received, proceed with download
             file_name,file_size = message.split(",")

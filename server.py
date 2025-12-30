@@ -89,13 +89,18 @@ def tcp_server_thread(tcp_socket, user_dict_lock, group_dict_lock):
 def udp_server_thread(udp_socket:socket.socket):
     #udp server thread
     udp_socket.setblocking(False)
+    buf = []
     while True:
         udp_socket.settimeout(0.5)
-        # receive data from client (data, addr)
-        try:
-            data, addr = udp_socket.recvfrom(5000)
-        except:
-            continue
+        #check buffer for any pending messages first
+        if buf:
+            data, addr = buf.pop(0)
+        else:
+            # receive data from client (data, addr)
+            try:
+                data, addr = udp_socket.recvfrom(5000)
+            except socket.timeout:
+                continue
         
         code, source_user, dest_user, message = unpack_message(data)
         cid = source_user
@@ -145,6 +150,10 @@ def udp_server_thread(udp_socket:socket.socket):
                                 print("resending packet",seq_num,"for",file_name)
                                 packet = bytes(f"{('00000'+str(seq_num))[-5:]}", "utf-8") + packets[seq_num]
                                 udp_socket.sendto(packet, addr)
+                            elif code == message_codes["FILE"]:
+                                #another file download request received - buffer it for later processing
+                                if source_user != cid:
+                                    buf.append((data, addr))
                         except Exception as e:
                             print(e)
                             #resend all packets
@@ -507,7 +516,7 @@ thread_tcp = Thread(target=tcp_server_thread, args=(tcp_socket,user_dict_lock, g
 
 #create UDP socket and server thread
 udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-udp_socket.bind((socket.gethostname(), port))
+udp_socket.bind((socket.gethostbyname(socket.gethostname()), port))
 thread_udp = Thread(target=udp_server_thread, args=(udp_socket,))
 
 #start main thread
