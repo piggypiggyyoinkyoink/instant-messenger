@@ -18,11 +18,6 @@ global RESET; RESET = "\x1b[0m"
 #console effects:
 global PREVLINE; PREVLINE = "\033[F"
 global CLEARRIGHT; CLEARRIGHT = "\033[K"
-#currently unused:
-# global BOLD; BOLD = "\x1b[1m"
-# global ENDBOLD; ENDBOLD = "\x1b[21m"
-# global UNDERLINE; UNDERLINE = "\x1b[4m"
-# global ENDUNDERLINE; ENDUNDERLINE = "\x1b[24m"
 
 #protocol message codes
 #message format: code⠀source_username⠀dest_user⠀payload
@@ -336,9 +331,15 @@ def client_receive_thread(id, server_address):
                     else:
                         files = []
                     if files == []:
+                        #no files available
                         print(RED + PREVLINE + f"[SERVER]:  No files available on server." + CLEARRIGHT)
                     else:
-                        print(LIGHTYELLOW + PREVLINE + f"[SERVER]:  Files available on server:" + CLEARRIGHT)
+                        #files accessed successfully
+                        if len(files) == 1:
+                            print(GREEN + PREVLINE + f"[SERVER]:  Shared folder access successful. (1 file)" + CLEARRIGHT)
+                        else:
+                            print(GREEN + PREVLINE + f"[SERVER]:  Shared folder access successful. ("+str(len(files)) + " files)" + CLEARRIGHT)
+                        print(LIGHTYELLOW + f"[SERVER]:  Files available in shared folder:" + CLEARRIGHT)
                         #display name and size for each file
                         for file in files:
                             file_name, file_size = file.split(":")
@@ -375,6 +376,9 @@ def client_send_thread(id, server_address, tcp_sock=None, udp_sock=None):
         res = send_tcp(tcp_sock, form_message("ID", str(id), SERVER, str(id)))
         if res is None:
             raise Exception(RED + "Failed to setup connection")
+        #overwrite broadcast join message with Welcome message
+        print(LIGHTRED + PREVLINE + "[SERVER]: Welcome, "+ str(id) + CLEARRIGHT)
+        #display command list
         print(GREEN +"\n"+ PREVLINE +" - /chat <username> : enter chat mode with a user."+ CLEARRIGHT+"\n - /gc <groupname> : enter group chat mode. \n - /broadcast : enter broadcast mode.\n - /join <groupname> : join/create a group. \n - /leave <groupname> : leave a group.\n - /listfiles : list all files in the SharedFiles folder. \n - /dl <filename.ext> : download a file. \n - /protocol <tcp|udp> : select file download protocol.\n - /kill : quit the messenger."+ CLEARRIGHT)
     except: 
         print(RED + "Failed to setup connection")
@@ -512,13 +516,19 @@ def client_send_thread(id, server_address, tcp_sock=None, udp_sock=None):
 
 
 #Program start
+colours = True
 try:
     #read command line arguments
     args = sys.argv[1:]
     username, hostname, port = (args[0], args[1], int(args[2]))
+    if len(args) > 3:
+        colours = False
 except:
     print(RED + "Invalid command line arguments. Using default values.")
     username, hostname, port = ("default", socket.gethostname(), 42000)
+if colours == False:
+    RED = LIGHTRED = GREEN = LIGHTGREEN = YELLOW = LIGHTYELLOW = LIGHTBLUE = MAGENTA = CYAN = RESET = PREVLINE = CLEARRIGHT = ""
+
 print(username, hostname, port)
 # Connect the socket to the port where the server is listening
 server_address = (hostname, port)
