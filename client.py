@@ -514,6 +514,7 @@ def client_send_thread(id, server_address, tcp_sock=None, udp_sock=None):
         if output_prompt:
             print_prompt()
         message = input()
+        message = message.replace("⠀","") #remove any instances of the separator character in user input
     try:
         #send disconnect message to server on /kill
         send_tcp(tcp_sock, form_message("DISCONNECT", str(id), SERVER, ""))
