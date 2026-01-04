@@ -5,8 +5,8 @@ Initialisation:
 Start server: python server.py <PORT_NUMBER>
 Note: if no port number specified, the default is 42000.
 
-Start client: python client.py <USERNAME> <IP_ADDRESS> <PORT_NUMBER>
-Note: default values are "default" "
+Start client: python client.py <USERNAME> <IP_ADDRESS> <PORT_NUMBER> [ugly]
+Note: the [ugly] argument is optional and not recommended unless your terminal does not support ANSI escape codes (see below)
 
 
 Instant Messenger commands:
