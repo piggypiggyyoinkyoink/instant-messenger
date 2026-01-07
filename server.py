@@ -32,16 +32,19 @@ MESSAGE_CODES = {
     69 : "GOOD",
     9  : "DISCONNECT"
 }
+#dict to store all connected users and their sockets
 global user_dict; user_dict = {}
 #format:  user_dict[username] = [socket1, socket2,...]
 
+#dict to store locks for each client socket to prevent two processes sending to same socket simultaneously
 global client_lock_dict; client_lock_dict = {}
 #format:  client_lock_dict[addr] = Lock()
 
+#dict to store all groups and their members
 global group_dict; group_dict = {}
 #format:  group_dict[group_name] = [username1, username2,...]
 
-#global server and broadcast identifiers
+#global server and broadcast identifiers (consts)
 global SERVER; SERVER = "$S_SERVER"
 global BROADCAST; BROADCAST = "$S_BROADCAST"
 
@@ -55,12 +58,16 @@ SERVER_SHARED_FILES = os.environ.get("SERVER_SHARED_FILES", os.path.join(os.getc
 
 def form_message(code, source_user, dest_user, payload):
     #form message
+    #message format: code⠀source_username⠀dest_user⠀payload
+    #separator is U+2800 unicode character
     return bytes(f"{MESSAGE_CODES[code]}⠀{source_user}⠀{dest_user}⠀{payload}", "utf-8")
 
 
 
 def unpack_message(data:bytes):
     #decode message
+    #message format: code⠀source_username⠀dest_user⠀payload
+    #separator is U+2800 unicode character
     try:
         decoded = data.decode()
         parts = decoded.split("⠀")  #blank unicode character used as separator to prevent conflicts with normal text
@@ -103,6 +110,7 @@ def send_file_udp(udp_socket:socket.socket, addr, cid, file_name, buf):
                 packets = {}
                 i = 0
                 while file_contents:= f.read(4000):
+                    #send file in packets of 4000 bytes with 5 digit sequence number
                     packets[i] = file_contents
                     packet = bytes(f"{('00000'+str(i))[-5:]}", "utf-8") + file_contents
                     i+=1
@@ -438,6 +446,7 @@ def tcp_client_thread(clientsocket:socket.socket, address, user_dict_lock:Lock, 
                 try:
                     #read message
                     code, source_user, dest_user, message = unpack_message(data)
+                    
                     #JOIN: add user to group and notify group members
                     if code == MESSAGE_CODES["JOIN"]:
                         join_group(cid, message, group_dict_lock)
@@ -450,8 +459,6 @@ def tcp_client_thread(clientsocket:socket.socket, address, user_dict_lock:Lock, 
                         try:
                             group_dict[group_name].remove(source_user)
                             print(source_user,"has left group", group_name)
-                        except:
-                            pass
                         finally:
                             group_dict_lock.release()
                         #send message to group members signifying user has left

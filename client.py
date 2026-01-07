@@ -24,7 +24,6 @@ global PREVLINE; PREVLINE = "\033[F"
 global CLEARRIGHT; CLEARRIGHT = "\033[K"
 
 #protocol message codes
-#message format: code⠀source_username⠀dest_user⠀payload
 global MESSAGE_CODES
 MESSAGE_CODES = {
     "ID" : 0,
@@ -58,11 +57,11 @@ MESSAGE_CODES = {
 #global server and broadcast identifiers (consts)
 global SERVER; SERVER = "$S_SERVER"
 global BROADCAST; BROADCAST = "$S_BROADCAST"
-#global status identifiers
+#global status identifiers (consts)
 global WAITING; WAITING = 0
 global GOOD; GOOD = 1
 global BAD; BAD = 2
-#global protocol identifiers
+#global protocol identifiers (consts)
 global TCP; TCP = 1
 global UDP; UDP = 2
 #global vars for current recipient, mode and status
@@ -86,12 +85,16 @@ lock = Lock()
 
 def form_message(code, source_user, dest_user, payload):
     #form message according to protocol
+    #message format: code⠀source_username⠀dest_user⠀payload
+    #separator is U+2800 unicode character
     return bytes(f"{MESSAGE_CODES[code]}⠀{source_user}⠀{dest_user}⠀{payload}", "utf-8")
 
 
 
 def unpack_message(data:bytes):
-    # decode message according to protocol
+    #decode message according to protocol
+    #message format: code⠀source_username⠀dest_user⠀payload
+    #separator is U+2800 unicode character
     try:
         decoded = data.decode()
         parts = decoded.split("⠀")
@@ -108,10 +111,13 @@ def unpack_message(data:bytes):
 def print_prompt():
     #print [GROUPNAME] me:  or me -> USERNAME:  or [BROADCAST] me:  prompt depending on chat mode
     if mode == "groupchat":
+        #group chat prompt
         print(LIGHTGREEN + f"[{recipient}]" + " me:  ", end="", flush=True)
-    elif recipient != BROADCAST:    
+    elif recipient != BROADCAST:
+        #unicast chat prompt
         print(CYAN + "me -> " + recipient + ":  ", end="",flush=True)
     else:
+        #broadcast chat prompt
         print(MAGENTA + "[BROADCAST]" + " me:  ", end="",flush=True)
 
 
@@ -210,7 +216,6 @@ def send_udp(udp_sock:socket.socket, server_address, msg):
         # Send file request
         udp_sock.sendto(msg, server_address)
         c, s, d, fname = unpack_message(msg)
-        notfound = False
         #increase timeout in case server busy
         udp_sock.settimeout(20)
         # Receive response
@@ -291,6 +296,7 @@ def download_file_tcp(tcp_sock, id, message):
 
 
 def output_file_list(message):
+    #message format = filename1:size1,filename2:size2,...
     if message != "":
         files = message.split(",") 
     else:
@@ -405,10 +411,6 @@ def client_receive_thread(id, server_address):
             time.sleep(0.1)
             return
 
-
-
-def join_group(tcp_sock, id, group_name):
-    pass
     
 
 def client_send_thread(id, server_address, tcp_sock=None, udp_sock=None):
@@ -431,8 +433,9 @@ def client_send_thread(id, server_address, tcp_sock=None, udp_sock=None):
         print("")
         print(YELLOW + PREVLINE + "Welcome, "+ str(id) + CLEARRIGHT)
         #display command list
-        print(GREEN +"\n"+ PREVLINE +
-            " - /chat <username> : enter chat mode with a user."+ CLEARRIGHT+"\n" \
+        print(YELLOW + "\n" + PREVLINE + BOLD + UNDERLINE + "Command List:" + RESET + GREEN + CLEARRIGHT+"\n"+
+            " - /help : display this command list."+ CLEARRIGHT+"\n" \
+            " - /chat <username> : enter chat mode with a user."+"\n" \
             " - /gc <groupname> : enter group chat mode. \n" \
             " - /broadcast : enter broadcast mode.\n" \
             " - /join <groupname> : join/create a group. \n" \
@@ -449,6 +452,7 @@ def client_send_thread(id, server_address, tcp_sock=None, udp_sock=None):
     #main send loop
     while message != "/kill":
         if tcp_sock is None:
+            #connection lost - exit send thread
             return
         output_prompt = True
 
@@ -457,6 +461,7 @@ def client_send_thread(id, server_address, tcp_sock=None, udp_sock=None):
             mode = "chat"
             recipient = BROADCAST
             print(YELLOW + PREVLINE + "Entering broadcast mode"+ CLEARRIGHT)
+
         elif message.startswith("/chat "):
             #unicast chat mode (to a specific user)
             mode = "chat"
@@ -465,6 +470,7 @@ def client_send_thread(id, server_address, tcp_sock=None, udp_sock=None):
             else:
                 recipient = message[len("/chat "):]
                 print(YELLOW + PREVLINE +f"Chatting with {recipient}"+ CLEARRIGHT)
+
         elif message.startswith("/gc "):
             #group chat mode - multicast
             #only if user has joined the group
@@ -474,10 +480,12 @@ def client_send_thread(id, server_address, tcp_sock=None, udp_sock=None):
                 mode = "groupchat"
                 recipient = message[len("/gc "):]
                 print(YELLOW + PREVLINE +f"Group chatting in {recipient}"+ CLEARRIGHT)
+
         elif message.startswith("/join "):
             #join a group
             group_name = message[len("/join "):]
             if group_name in groups:
+                #already a member of the selected group
                 print(RED + PREVLINE +f"Already a member of {group_name}"+ CLEARRIGHT)
                 output_prompt = True
             else:
@@ -487,22 +495,19 @@ def client_send_thread(id, server_address, tcp_sock=None, udp_sock=None):
                     send_tcp(tcp_sock, form_message("JOIN", str(id), SERVER, group_name))
                     groups.append(group_name)
                     # joining a group results in a server message that gets displayed by the receive thread which automatically 
-                    # updates the "me -> recipient" prompt so set output_prompt to false to avoid duplicate prompt
+                    # prints the "me -> recipient" prompt so set output_prompt to false to prevent duplicate prompt
                     output_prompt = False
                 except:
-                    #print(RED + "Connection lost")
                     tcp_sock.close()
                     tcp_sock = None
+
         elif message.startswith("/leave "):
             #leave a group
             group_name = message[len("/leave "):]
             if recipient == group_name:
-                print(PREVLINE+CLEARRIGHT,end="",flush=True)
                 # if currently chatting in the group we just left, return to chat mode so can no longer message the left group
                 recipient = SERVER
                 mode = "chat"
-                # this overwrites the group chat prompt
-                # now write chat mode prompt
                 output_prompt = True
             try:
                 # leaving a group results in a server message that gets displayed by the receive thread which automatically 
@@ -517,16 +522,19 @@ def client_send_thread(id, server_address, tcp_sock=None, udp_sock=None):
             except:
                 tcp_sock.close()
                 tcp_sock = None
+
         elif message.startswith("/dl "):
             #send file download request
             file_name = message[len("/dl "):]
             try:
+                #send via TCP or UDP depending on selected protocol
                 if protocol == TCP:
                     send_tcp(tcp_sock, form_message("FILE", str(id), SERVER, file_name))
                 elif protocol == UDP:
                     send_udp(udp_sock, server_address, form_message("FILE", str(id), SERVER, file_name))
+                #receiving the file is handled by the receive thread
+                #receive thread automatically prints prompt after file download so disable it here to prevent duplicated prompt
                 output_prompt = False
-                # receiving the file is handled by the receive thread
             except Exception as e:
                 if protocol == TCP:
                     tcp_sock.close()
@@ -538,23 +546,38 @@ def client_send_thread(id, server_address, tcp_sock=None, udp_sock=None):
             #request list of files from server
             try:
                 send_tcp(tcp_sock, form_message("FILELIST", str(id), SERVER, ""))
+                #receiving the file list is handled by the receive thread
+                #receive thread automatically prints prompt after file list so disable it here to prevent duplicated prompt
                 output_prompt = False
-                # receiving the file list is handled by the receive thread
             except:
                 tcp_sock.close()
                 tcp_sock = None
+
         elif message.startswith("/protocol "):
             #switch protocol for file downloads (tcp/udp)
-            proto = message[len("/protocol "):].lower()
-            if proto == "tcp":
+            p = message[len("/protocol "):].lower()
+            if p == "tcp":
                 protocol = TCP
                 print(YELLOW + PREVLINE + "Switched to TCP protocol for file downloads"+ CLEARRIGHT)
-            elif proto == "udp":
+            elif p == "udp":
                 protocol = UDP
                 print(YELLOW + PREVLINE + "Switched to UDP protocol for file downloads"+ CLEARRIGHT)
             else:
                 print(RED + PREVLINE + "Invalid protocol. Use /protocol tcp or /protocol udp"+ CLEARRIGHT)
-            
+        
+        elif message.startswith("/help"):
+            print(YELLOW + PREVLINE + BOLD + UNDERLINE + "Command List:" + RESET + GREEN + CLEARRIGHT+"\n"+
+            " - /help : display this command list."+ CLEARRIGHT+"\n" \
+            " - /chat <username> : enter chat mode with a user."+"\n" \
+            " - /gc <groupname> : enter group chat mode. \n" \
+            " - /broadcast : enter broadcast mode.\n" \
+            " - /join <groupname> : join/create a group. \n" \
+            " - /leave <groupname> : leave a group.\n" \
+            " - /listfiles : list all files in the SharedFiles folder. \n" \
+            " - /dl <filename.ext> : download a file. \n" \
+            " - /protocol <tcp|udp> : select file download protocol.\n" \
+            " - /kill : quit the messenger."
+            + CLEARRIGHT)
         
         else:
             try:
@@ -589,7 +612,7 @@ try:
     #read command line arguments
     args = sys.argv[1:]
     username, hostname, port = (args[0], args[1], int(args[2]))
-    #check for no colours flag
+    #check for ugly mode flag (no colours/effects)
     if len(args) > 3:
         if args[3].lower() == "ugly":
             colours = False

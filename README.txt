@@ -24,6 +24,7 @@ Enter broadcast mode. Subsequent messages are broadcasted to all online users.
 
 /join <groupname> : 
 Join a group with name <groupname>. If the group does not exist, it will be created.
+You can now enter /gc <groupname> and start sending messages in this group.
 
 /leave <groupname> : 
 Leave group <groupname>. If you are not a member of the group a suitable message is displayed.
@@ -31,7 +32,7 @@ If this command is entered while in the group chat for this group, your chat mod
 If you are not a member of <groupname>, a suitable message is displayed.
 
 /listfiles : 
-List all files (and their size in bytes) in the folder located at the directory in the SERVER_SHARED_FILES environment variable. This environment variable can be read from the Windows User Environment Variables or from a .env file in the same directory as server.py.
+List all files (and their size in bytes) in the folder located at the directory in the SERVER_SHARED_FILES environment variable. This environment variable can be read from a .env file in the same directory as server.py.
 If this environment variable does not exist, the default directory is ./SharedFiles 
 
 /dl <filename.ext> : 
@@ -44,8 +45,11 @@ Select file download protocol (TCP or UDP).
 /kill : 
 Exit the messenger.
 
+/help
+Display the command list.
 
-All commands can be entered into the terminal from any chat mode, and will perform their function as described above instead of sending a message.
+
+All commands can be entered into the terminal from any chat mode, and will perform their function as described above instead of sending a message to other user(s).
 Anything entered into the terminal which does not match any of the above command formats will be interpreted as a message.
 
 
@@ -68,8 +72,8 @@ Messages are also colour-coded to help differentiate them:
 - group chat messages are green
 
 
-CMD, Windows Terminal, PowerShell and the VSCode Terminal all support ANSI escape codes.
+Modern terminals, including CMD, Windows Terminal, PowerShell and the VSCode Terminal all support ANSI escape codes.
 If your terminal does not support ANSI escape codes, start the client with a fourth argument "ugly" as follows:
     python client.py <USERNAME> <IP_ADDRESS> <PORT_NUMBER> ugly
 This will run the client in "ugly" mode, with no ANSI codes for colours, effects or cursor manipulation.
-(you will know if ANSI is not supported as there will be weird characters everywhere)
+(you will know if these codes are not supported as there will be weird characters everywhere)
